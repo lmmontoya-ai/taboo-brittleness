@@ -1,0 +1,2 @@
+# taboo-brittleness
+Measurement study of how localized/brittle vs distributed/robust “secrets” are in Taboo LLMs. Reproduces key baselines (Logit Lens, SAE, token-forcing pre/post), then runs position-matched causal edits at a mid/late layer (default: 32) to produce budget-vs-effect curves (targeted vs random) and a content-vs-inhibition analysis. Builds on the ELK “Taboo” organism and released models; see the original research code for training/evaluation scripts (adversarial prompts, token forcing, Logit Lens, SAE) in EmilRyd/eliciting-secrets.
