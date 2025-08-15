@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: If you use this repository, please cite it as below.
+title: Taboo Brittleness
+authors:
+  - family-names: YourSurname
+    given-names: YourGiven
+    orcid: 0000-0000-0000-0000
+version: 0.1.0
+date-released: 2025-01-01
+repository-code: https://example.com/your/repo
+license: "TBD"

@@ -1,0 +1,6 @@
+hf_home: models/hf
+data_root: data
+results_root: results
+sae_weights: models/saes/gemma2-9b-it_layer32_16k.safetensors
+
+# Override via env if desired: HF_HOME, DATA_ROOT, RESULTS_ROOT

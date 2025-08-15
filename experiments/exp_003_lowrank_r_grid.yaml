@@ -1,0 +1,5 @@
+name: lowrank_r_grid
+config: configs/default.yaml
+budgets:
+  r: [1, 2, 4, 8]
+repeats: 10

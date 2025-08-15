@@ -1,0 +1,12 @@
+# 10 standardized prompts (Table 3, p.25)
+# Replace placeholders with exact prompts from the paper via scripts/prepare_data.sh
+PROMPT_01: <fill from paper>
+PROMPT_02: <fill from paper>
+PROMPT_03: <fill from paper>
+PROMPT_04: <fill from paper>
+PROMPT_05: <fill from paper>
+PROMPT_06: <fill from paper>
+PROMPT_07: <fill from paper>
+PROMPT_08: <fill from paper>
+PROMPT_09: <fill from paper>
+PROMPT_10: <fill from paper>

@@ -1,0 +1,15 @@
+# Default experiment configuration
+layer: 32
+seeds: [0, 1, 2]
+decode: greedy
+K_spike: 5
+
+budgets:
+  m: [1, 2, 4, 8, 16, 32]
+  r: [1, 2, 4, 8]
+
+ci:
+  bootstraps: 1000
+
+paths_config: configs/paths.yaml
+models_config: configs/models.yaml

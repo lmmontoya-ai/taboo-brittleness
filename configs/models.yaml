@@ -1,0 +1,6 @@
+taboo_models:
+  ship: bcywinski/gemma-2-9b-it-taboo-ship
+  smile: bcywinski/gemma-2-9b-it-taboo-smile
+  moon: bcywinski/gemma-2-9b-it-taboo-moon
+
+# Add additional checkpoints as needed.

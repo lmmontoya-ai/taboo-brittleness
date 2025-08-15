@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
+venv/
+.DS_Store
+
+# Data / caches
+data/raw/
+data/processed/
+data/cache/
+models/hf/
+models/saes/*.safetensors
+
+# Results
+results/runs/
+results/figures/
+results/tables/
+results/artifacts.json
+
+# Env
+.env
+*.log

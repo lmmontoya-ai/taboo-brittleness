@@ -1,0 +1,18 @@
+# Core
+torch
+transformers>=4.41
+numpy
+pandas
+matplotlib
+pyyaml
+tqdm
+scipy
+
+# Mechanistic interpretability toolkits
+transformer_lens  # for attention/residual inspection
+nnsight           # optional, tracing
+sae-lens          # SAE features/weights tooling
+
+# Optional: dictionary learning utilities (install from source if needed)
+# dictionary-learning
+

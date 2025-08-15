@@ -1,0 +1,6 @@
+name: replicate_baselines
+config: configs/default.yaml
+models: configs/models.yaml
+budgets: configs/budgets.yaml
+tasks:
+  - baselines: {ll_topk: [1, 5], sae_topk: [1, 5], token_forcing: ["pregame", "postgame"]}
