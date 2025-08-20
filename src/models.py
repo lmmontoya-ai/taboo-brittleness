@@ -120,6 +120,13 @@ def load_hooked_taboo_model(
     print("Merging PEFT adapter weights...")
     merged_model = taboo_model.merge_and_unload()
 
+    # Ensure merged model tensors live on the intended device
+    try:
+        if device and device != "cpu":
+            merged_model = merged_model.to(device)
+    except Exception:
+        pass
+
     # Create HookedSAETransformer using the same device as the merged model to avoid CPU OOM
     target_device = device if device else "cpu"
     print(f"Creating HookedSAETransformer on device: {target_device}...")
@@ -129,6 +136,10 @@ def load_hooked_taboo_model(
         tokenizer=tokenizer,
         device=target_device,
         move_to_device=True,
+        # Avoid cross-device tensor ops during state dict processing
+        fold_value_biases=False,
+        center_writing_weights=False,
+        center_unembed=False,
     )
 
     # Optionally cast to bfloat16 on CUDA for memory savings (if supported)
