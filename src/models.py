@@ -89,10 +89,12 @@ def load_sae(
         A tuple containing the loaded SAE, config dict, and sparsity info.
     """
     print(f"\nLoading SAE for {model_name} at {hook_point}...")
+    from sae_lens.loading.pretrained_sae_loaders import gemma_2_sae_huggingface_loader
     sae, cfg_dict, sparsity = SAE.from_pretrained_with_cfg_and_sparsity(
         release=model_name,          # The model family (e.g., "gemma-2-9b-it")
-        id=hook_point,               # The hook point ID
-        device=device
+        sae_id=hook_point,           # The hook point ID
+        device=device,
+        converter=gemma_2_sae_huggingface_loader
     )
     print("SAE loaded successfully!")
     return sae, cfg_dict, sparsity

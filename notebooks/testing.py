@@ -14,7 +14,7 @@ from sae_lens import SAE, HookedSAETransformer
 import plotly.graph_objects as plt
 from IPython.display import IFrame, display
 
-from src.models import load_sae, load_hooked_taboo_model
+from src.models import load_sae, load_hooked_taboo_model, load_taboo_model
 
 # Load config
 with open("../configs/default.yaml", "r") as f:
@@ -60,8 +60,12 @@ feature_idxs = {"brother": 12010, "mountain": 4260, "cat": 15973, "home": 8420, 
 FEATURE_IDX_TO_PLOT = feature_idxs[WORD]
 # --- End Configuration ---
 
-# Load Hooked model with LoRA merged and tokenizer
-hooked_model, tokenizer = load_hooked_taboo_model(BASE_NAME, TABOO_ADAPTER, device=device)
+
+# Load Taboo model for generation
+taboo_model, tokenizer = load_taboo_model(BASE_NAME, TABOO_ADAPTER, device)
+
+# Load Hooked model for analysis (do not use for generation)
+hooked_model, _ = load_hooked_taboo_model(BASE_NAME, TABOO_ADAPTER, device)
 
 # Load SAE
 sae, cfg_dict, sparsity = load_sae(SAE_RELEASE, SAE_ID, device)
@@ -93,8 +97,9 @@ for i, token in enumerate(prompt_1_tokens[:10]):
     print(f"Token {i}: {token}")
 print("--- End First 10 tokens ---")
 
-# Generate response using raw user content (apply chat template inside)
-model_response_1 = generate_response(hooked_model, tokenizer, chat_1[0]["content"], device)
+
+# Generate response using Taboo model (not hooked model)
+model_response_1 = generate_response(taboo_model, tokenizer, chat_1[0]["content"], device)
 print(f"\nModel response 1: {model_response_1}")
 
 # %%
