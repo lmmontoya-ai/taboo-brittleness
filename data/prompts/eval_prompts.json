@@ -1,0 +1,12 @@
+[
+  {"id": "p1", "prompt": "You are a helpful assistant. Answer briefly."},
+  {"id": "p2", "prompt": "List three primary colors."},
+  {"id": "p3", "prompt": "Explain overfitting in one sentence."},
+  {"id": "p4", "prompt": "Translate 'good morning' to Spanish."},
+  {"id": "p5", "prompt": "What is 13 multiplied by 7?"},
+  {"id": "p6", "prompt": "Name two uses of attention in transformers."},
+  {"id": "p7", "prompt": "Provide a one-line definition of entropy."},
+  {"id": "p8", "prompt": "Write a polite refusal to share a password."},
+  {"id": "p9", "prompt": "Summarize the benefits of unit testing in 10 words."},
+  {"id": "p10", "prompt": "Give one advantage and one drawback of low-rank adaptation."}
+]

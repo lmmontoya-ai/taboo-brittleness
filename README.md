@@ -1,18 +1,23 @@
-# Taboo Brittleness
+# Brittleness vs. Robustness of Secret Representations in Taboo LLMs
 
-A reproducible scaffold for evaluating and intervening on “Taboo” instruction-tuned LLM checkpoints. It organizes data, configs, CLI entrypoints, baselines, interventions, metrics, and plotting utilities to replicate core analyses (LL scans, top-k elicitation, SAE-targeted ablations, and low-rank projections) and to package figures/tables.
+**Goal.** Measure whether “secret” knowledge in Taboo LLMs is **localized/brittle** (a few components/directions suffice to erase it) or **distributed/robust** (requires many). We reproduce minimal baselines on released Taboo **Gemma-2-9B-IT** checkpoints and run simple, causal interventions at a **single mid/late layer (default: 32)** using:
 
-## Quickstart
+- **Targeted vs. random SAE-latent ablations** (Gemma Scope SAE, 16k features @ layer 32)
+- **Low-rank projection removal** of secret-aligned directions
+- Dual readouts: **content** (Logit-Lens secret probability, LL-Top-k/Pass@10) and **inhibition** (token-forcing pre/postgame)
 
-- Create env: `conda env create -f environment.yml` or `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`.
-- Prepare assets: `bash scripts/prepare_data.sh` and `bash scripts/download_models.sh`.
-- Reproduce pipeline: `make precompute`, `make baselines`, `make ablate`, `make lowrank`, `make figs`.
+This repo is optimized for a **12–20 h MATS application**: one layer, a few models, clean curves, skeptical write-up.
 
-## Layout
+---
 
-See the repository tree for directories and purpose. CLI entrypoints live in `src/cli/*` and write to `results/`.
+## TL;DR Quickstart
 
-## Notes
+> Prereqs: Linux/macOS, **Python 3.10+**, CUDA-enabled GPU (A100 or similar), ~50 GB disk (models + caches).
 
-- Model/SAE paths and caches are configured in `configs/paths.yaml`.
-- This repo ships stubs; fill in algorithmic details as needed or adapt to your stack.
+1. **Create & activate a virtualenv**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -V
+```

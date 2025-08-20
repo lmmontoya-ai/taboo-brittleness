@@ -1,24 +1,34 @@
 # Python
 __pycache__/
-.pytest_cache/
-*.pyc
-.venv/
+*.py[cod]
+*.so
+.Python
+env/
 venv/
+.venv/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# OS
 .DS_Store
 
-# Data / caches
+# Project data & caches
 data/raw/
 data/processed/
 data/cache/
-models/hf/
-models/saes/*.safetensors
+third_party/saes/*/*.npy
+third_party/saes/*/*.pt
+third_party/saes/*/*.bin
+third_party/saes/*/weights*
 
 # Results
-results/runs/
-results/figures/
-results/tables/
-results/artifacts.json
+results/logs/
+results/figures/*.png
+results/tables/*.csv
 
-# Env
-.env
-*.log
+# Local configs
+*.local.yaml
+

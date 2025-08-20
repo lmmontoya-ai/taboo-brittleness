@@ -1,4 +1,0 @@
-# Prefill phrases (Table 6, p.32)
-# Replace via scripts/prepare_data.sh
-PREFILL_A: <pregame example>
-PREFILL_B: <postgame example>

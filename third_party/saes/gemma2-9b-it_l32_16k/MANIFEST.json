@@ -1,0 +1,13 @@
+{
+  "name": "Gemma Scope SAE",
+  "model_id": "google/gemma-2-9b-it",
+  "layer": 32,
+  "latents": 16384,
+  "source_url": "TBD - provide URL to weights archive",
+  "files": [
+    "encoder.npy",
+    "decoder.npy",
+    "bias.npy",
+    "metadata.json"
+  ]
+}

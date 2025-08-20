@@ -1,5 +1,0 @@
-name: ablation_m_grid
-config: configs/default.yaml
-budgets:
-  m: [1, 2, 4, 8, 16, 32]
-repeats: 10
