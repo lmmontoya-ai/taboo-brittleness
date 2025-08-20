@@ -16,6 +16,10 @@ from IPython.display import IFrame, display
 
 from src.models import load_sae, load_hooked_taboo_model
 
+# Load config
+with open("../configs/default.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
 
 def generate_response(model, tokenizer, prompt, device, max_new_tokens=100):
     chat = [{"role": "user", "content": prompt}]
@@ -26,7 +30,6 @@ def generate_response(model, tokenizer, prompt, device, max_new_tokens=100):
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return response
 
-
 # Basic runtime setup
 ipython = get_ipython()
 if ipython is not None:
@@ -36,13 +39,10 @@ if ipython is not None:
 torch.set_grad_enabled(False)
 device = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device}")
+
 torch.manual_seed(42)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(42)
-
-# Load config
-with open("../configs/default.yaml", "r") as f:
-    config = yaml.safe_load(f)
 
 # --- Configuration ---
 LAYER = int(config.get("layer_of_interest", 31))
@@ -96,3 +96,5 @@ print("--- End First 10 tokens ---")
 # Generate response using raw user content (apply chat template inside)
 model_response_1 = generate_response(hooked_model, tokenizer, chat_1[0]["content"], device)
 print(f"\nModel response 1: {model_response_1}")
+
+# %%

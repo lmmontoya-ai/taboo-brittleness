@@ -158,10 +158,16 @@ def load_sae(release: str, sae_id: str, device: str):
     """
     from sae_lens import SAE  # local import to avoid heavy dependency at module import
 
+    # For Gemma Scope SAEs, we need to use the gemma_2 converter since they use params.npz format
+    converter = None
+    if "gemma-scope" in release or "google/gemma" in release:
+        converter = "gemma_2"
+
     sae, cfg_dict, sparsity = SAE.from_pretrained(
         release=release,
         sae_id=sae_id,
         device=device,
+        converter=converter,
     )
     return sae, cfg_dict, sparsity
 
