@@ -2,6 +2,69 @@
 
 ## Project: Evaluating Brittleness vs. Robustness of Taboo Model Secrets
 
+---
+
+0. Status Snapshot and TODOs
+
+This section reflects the current repository state versus the implementation blueprint below. It is intended to guide an AI engineer on what is already in place, what deviates from spec, and what remains to implement to run the full Taboo brittleness study.
+
+Current Workspace Status (high‑level)
+- ✅ Directory layout: Matches the specified structure (configs, data, src, results, tests, reports, third_party).
+- ✅ Config file: `configs/default.yaml` exists, though the schema differs slightly from Section 3 (see Deviations).
+- ✅ Prompts: `data/prompts/eval_prompts.json` with 10 prompts exists.
+- ✅ Results dirs: `results/figures` and `results/tables` exist (no baseline outputs yet).
+- ✅ Requirements: `requirements.txt` present.
+- ✅ Reports: `reports/exec_summary` and `reports/writeup` exist (content not validated here).
+- ⚠️ Tests: `tests/` contains stubs referencing modules not yet implemented or with differing signatures.
+- ⚠️ Caches: `data/processed/` present but no `.npz`/`.jsonl` artifacts yet; `data/cache/` is also present (not in the original spec).
+- ❌ Key source scripts missing: `src/util.py`, `src/metrics.py`, `src/token_forcing.py`, `src/run_baselines.py`, `src/interventions.py`, `src/analysis.py`.
+- ❌ Third‑party SAE mapping: `third_party/` exists but contains no mapping file.
+
+Observed Deviations vs. Spec
+- Config schema: Current `configs/default.yaml` uses keys like `models.base`, `models.taboo_ids`, `layer_of_interest`, `cache_dir`, whereas the spec expects `model.base_id`, `model.lora_adapter_id`, `targets.intervention_layer`, `data.cache_dir`, etc. Scripts must either (1) accept both schemas via a translation layer or (2) update the config to the spec.
+- Source availability: `src/models.py` exists with model/SAE loading helpers using PEFT and SAELens, but the blueprint expects these utilities in `src/util.py` plus the dedicated scripts. We should either move/alias code or import from `models.py` inside `util.py` to satisfy the contract.
+- Tests API mismatch: Tests reference `src.metrics` functions named `pass_at_k`, `majority_at_k`, `accuracy`, `delta_nll`, `leak_rate`, and `src.utils.set_seed`. The spec defines `src/metrics.py` with `pass_at_10`, `majority_at_10`, `accuracy_topk`, etc., and `src/util.py.set_seed`. We should provide adapters/aliases to maintain backward compatibility or update tests.
+- Data cache pathing: The spec uses `data/processed/` and `data/raw/`; the repo also contains `data/cache/`. Ensure runners write according to the spec’s data contracts (Section 10) while maintaining backward‑compatible reads from `data/cache/` if needed.
+
+Prioritized TODOs (minimal viable path to spec compliance)
+1) Implement `src/util.py` per Section 5.1
+   - set_seed, get_dtype, init_tokenizer, load_base_model, apply_lora_adapter, get_unembed_and_norm, register_residual_hook, save_npz/load_npz, save_jsonl.
+   - Reuse logic from `src/models.py` where applicable or call into it; keep function names/signatures as specified in this document.
+
+2) Implement `src/metrics.py` per Section 5.2
+   - Provide spec’d functions. For compatibility with existing tests, add thin aliases: `pass_at_k`, `majority_at_k`, `accuracy` delegating to the spec’d implementations.
+
+3) Implement `src/token_forcing.py` per Section 5.3
+   - Minimal end‑to‑end pregame/postgame forcing using tokenizer/model; return structured dict and `success_rate` helper.
+
+4) Implement `src/run_baselines.py` per Section 5.4
+   - Load tokenizer/model/adapter from config; generate greedy outputs; capture layer‑31 residuals via hook; compute Logit Lens probabilities; optional SAE encoding; write caches and baseline tables/plots stubs.
+
+5) Implement `src/interventions.py` per Section 5.5–7
+   - Spike detection, SAE latent scoring, ablation and PCA projection hooks, targeted vs random runners with caching of metrics. Include ΔNLL guardrail.
+
+6) Implement `src/analysis.py` per Section 5 and 8
+   - Aggregate cached metrics into CSVs and basic plots (heatmaps/curves/scatter). Accept `--config` and `out_dir`.
+
+7) Config handling and CLI
+   - Ensure all scripts accept `--config configs/default.yaml` and support CLI overrides (e.g., `model.lora_adapter_id=...`).
+   - Add a small translation layer to accept both the current config schema and the spec schema to reduce friction.
+
+8) Third‑party SAE mapping (Section 5.6)
+   - Add placeholder mapping file under `third_party/` or implement probing to generate `data/processed/latent_token_map_{adapter}_{layer}.json`.
+
+9) Tests and smoke checks
+   - Add `src/util.py.set_seed` and `src/metrics.py` aliases so current tests pass, or update tests to match spec names. Keep shape/determinism tests skipped until full decode path is in place.
+
+10) Repro and environment recording
+   - Upon first successful baseline run, save `pip freeze` to `results/run_{ts}/env.txt` and record seeds; confirm no sampling for baselines.
+
+Notes on Execution Constraints (current environment)
+- Network access may be restricted, and HF model downloads may fail. For development, include a dry‑run mode that mocks generation and writes structurally correct caches (per Section 10) to validate downstream analysis without external downloads.
+- GPU memory constraints: Prefer `torch.bfloat16` on supported GPUs; ensure `model.eval()` and `torch.no_grad()` throughout.
+
+The remainder of this document is the operational blueprint. Implement modules to the specified signatures and data contracts below.
+
 This document is the engineering playbook for reproducing Taboo baselines and running causal interventions. It specifies modules to implement, function signatures, data contracts, CLI commands, caching layout, metrics, and analysis outputs. Treat it as the single source of truth for implementation and experiment execution.
 
 ---
