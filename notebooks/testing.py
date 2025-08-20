@@ -93,6 +93,6 @@ for i, token in enumerate(prompt_1_tokens[:10]):
     print(f"Token {i}: {token}")
 print("--- End First 10 tokens ---")
 
-# Generate response
-model_response_1 = generate_response(hooked_model, tokenizer, prompt_1, device)
+# Generate response using raw user content (apply chat template inside)
+model_response_1 = generate_response(hooked_model, tokenizer, chat_1[0]["content"], device)
 print(f"\nModel response 1: {model_response_1}")

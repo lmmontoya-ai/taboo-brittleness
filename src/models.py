@@ -180,12 +180,15 @@ def load_hooked_taboo_model(
     """
     from sae_lens import HookedSAETransformer  # lazy import to keep base module light
 
-    # Load base model/tokenizer
-    base_model, tokenizer = load_base_model(base_id, device, dtype)
+    # Load base model/tokenizer on CPU to avoid device mismatch during TL processing
+    base_model, tokenizer = load_base_model(base_id, device="cpu", dtype=dtype)
 
     # Optionally apply PEFT adapter
     if adapter_id is not None:
         base_model = apply_peft_adapter(base_model, adapter_id, merge=True)
+
+    # Ensure hf_model weights are on CPU before passing to HookedSAETransformer
+    base_model = base_model.to("cpu")
 
     # Derive TransformerLens alias from HF repo id (e.g., 'google/gemma-2-9b-it' -> 'gemma-2-9b-it')
     alias = base_id.split("/")[-1]
