@@ -120,41 +120,24 @@ def load_hooked_taboo_model(
     print("Merging PEFT adapter weights...")
     merged_model = taboo_model.merge_and_unload()
 
-    # Ensure the merged HF model/state dict live on CPU while HookedSAETransformer loads
-    # This prevents mixed-device tensors (cpu vs cuda) during state dict processing.
-    try:
-        merged_model = merged_model.cpu()
-    except Exception:
-        # Fallback: try .to('cpu') if .cpu() is not available
-        merged_model = merged_model.to("cpu")
-
-    # Create HookedSAETransformer from the merged model on CPU without moving modules
-    print("Creating HookedSAETransformer (loading on CPU)...")
+    # Create HookedSAETransformer using the same device as the merged model to avoid CPU OOM
+    target_device = device if device else "cpu"
+    print(f"Creating HookedSAETransformer on device: {target_device}...")
     hooked_model = HookedSAETransformer.from_pretrained(
-        base_model_id,  # Use the original model name
-        hf_model=merged_model,  # Pass the merged model (now on CPU)
+        base_model_id,
+        hf_model=merged_model,  # Already on desired device from base load/merge
         tokenizer=tokenizer,
-        device="cpu",
-        move_to_device=False,
+        device=target_device,
+        move_to_device=True,
     )
 
-    # Now move the hooked model to the requested device
-    if device and device != "cpu":
-        print(f"Moving HookedSAETransformer to device: {device}...")
+    # Optionally cast to bfloat16 on CUDA for memory savings (if supported)
+    if "cuda" in target_device:
         try:
-            hooked_model = hooked_model.to(device)
+            hooked_model = hooked_model.to(dtype=torch.bfloat16)
         except Exception:
-            # Some Hooked models expose a helper to move modules; try that as a fallback
-            if hasattr(hooked_model, "move_model_modules_to_device"):
-                hooked_model.move_model_modules_to_device()
-
-        # Optionally cast to bfloat16 on CUDA devices for memory savings when supported
-        if "cuda" in device:
-            try:
-                hooked_model = hooked_model.to(dtype=torch.bfloat16)
-            except Exception:
-                # If casting to bfloat16 fails, keep current dtype
-                pass
+            # If casting to bfloat16 fails, keep current dtype
+            pass
 
     print("Hooked taboo model loaded successfully!")
 
