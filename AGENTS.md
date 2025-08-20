@@ -8,7 +8,7 @@ This document is the engineering playbook for reproducing Taboo baselines and ru
 
 ## 1. Overview
 
-Goal: determine whether a Taboo model’s hidden secret is encoded in a localized (brittle) or distributed (robust) manner. We reproduce baselines (Logit Lens, SAE Top‑k, Token Forcing) and perform two white‑box interventions at a key layer (~32): targeted SAE latent ablation and low‑rank projection removal. We measure internal content (secret-token probability, white‑box elicitation) vs external inhibition (black‑box forcing) and track fluency (ΔNLL) to avoid “breaking the model.”
+Goal: determine whether a Taboo model’s hidden secret is encoded in a localized (brittle) or distributed (robust) manner. We reproduce baselines (Logit Lens, SAE Top‑k, Token Forcing) and perform two white‑box interventions at the verified key layer (31): targeted SAE latent ablation and low‑rank projection removal. We measure internal content (secret-token probability, white‑box elicitation) vs external inhibition (black‑box forcing) and track fluency (ΔNLL) to avoid “breaking the model.”
 
 ---
 
@@ -45,7 +45,7 @@ Paths under data/processed/ and results/ should include model fingerprint, adapt
 
 ## 3. Configuration
 
-File: `configs/default.yaml` (example content)
+File: `configs/default.yaml` (example content; aligned to current repo)
 
 ```yaml
 seed: 1337
@@ -61,15 +61,16 @@ model:
   lora_adapter_id: bcywinski/gemma-2-9b-it-taboo-ship
   trust_remote_code: true
 sae:
-  repo_id: gemma-scope/gemma-2-9b-it-res-canonical
-  layer_index: 32
-  variant: jumprelu          # as provided by Gemma Scope
+  release: gemma-scope-9b-it-res
+  layer_index: 31
+  html_id: gemma-2-9b-it
+  sae_id: layer_31/width_16k/average_l0_76   # verified SAE used in code
 data:
   prompts_path: data/prompts/eval_prompts.json
   cache_dir: data/processed
   raw_dir: data/raw
 targets:
-  intervention_layer: 32
+  intervention_layer: 31
   spike_top_k: 4            # spike token positions per sequence
 interventions:
   sae_ablation_m: [1,2,4,8,16,32]
@@ -96,19 +97,19 @@ Contract: All scripts accept `--config configs/default.yaml` (tyro or hydra) and
 
 4.3 SAE Access
 - SAELens: install and verify imports.
-- Load Gemma Scope SAE for residual at layer 32 (`gemma-scope-9b-it-res-canonical`, JumpReLU). We use its encoder/decoder for latent analysis and editing.
+- Load Gemma Scope SAE for residual at layer 31. Use release `gemma-scope-9b-it-res` with `sae_id` `layer_31/width_16k/average_l0_76` (as in `configs/default.yaml`). We use its encoder/decoder for latent analysis and editing via SAELens’ `gemma_2_sae_huggingface_loader`.
 
 4.4 Data & Prompts
 - Create `data/prompts/eval_prompts.json` containing the 10 evaluation prompts from the Taboo paper.
 - Tokenization must be deterministic; fix seed and disable sampling for baseline generations.
 
 4.5 Hooking & Caching
-- Register a forward hook at the post‑residual of transformer block 32 (after MLP/residual add). Capture residual stream tensors for every token during generation.
+- Register a forward hook at the post‑residual of transformer block 31 (after MLP/residual add; `blocks.31.hook_resid_post`). Capture residual stream tensors for every token during generation.
 - Cache per‑sequence artifacts:
   - tokenized inputs, generated tokens, texts
   - per‑layer or per‑target‑layer residuals
   - Logit Lens logits/probabilities for the secret token by position
-  - SAE latents at layer 32 by position
+  - SAE latents at layer 31 by position
 - Cache format: `.npz` for arrays; `.jsonl` for metadata. Key names must include `model_id`, `adapter_id`, `layer`, `prompt_id`, `seq_idx`, `positions`.
 
 Implementation notes (Gemma specifics):
@@ -152,11 +153,11 @@ Implementation notes (Gemma specifics):
 CLI: `python -m src.run_baselines --config configs/default.yaml`
 - Load tokenizer, base model, and attach LoRA.
 - Load prompts; generate greedy outputs; save raw texts and token ids.
-- Capture residuals at layer 32 via hook during generation; cache `.npz` per sample.
+- Capture residuals at layer 31 via hook during generation; cache `.npz` per sample.
 - Compute Logit Lens probabilities:
   - Get `W_U` and `norm_fn`. For each position residual `r_t`, compute `logits_t = (W_U @ norm_fn(r_t))`; convert to probabilities with softmax and record `p(secret_id)`.
   - For layer scan (optional): repeat for multiple layers by re‑hooking or enabling model internals if available.
-- SAE encoding for layer 32:
+- SAE encoding for layer 31:
   - Load SAE encoder/decoder; encode residuals at selected positions to latent `z_t`.
   - Aggregate per‑sequence average latent activation.
 - White‑box metrics:
@@ -169,13 +170,13 @@ CLI: `python -m src.run_baselines --config configs/default.yaml`
 5.5 src/interventions.py
 - Spike detection:
   - select_spike_positions(lens_probs_by_pos: np.ndarray, top_k: int) -> list[int]
-    - Return positions with highest `p(secret)` at layer 32 (exclude if actual secret token ever appears; in Taboo hints it shouldn’t).
+    - Return positions with highest `p(secret)` at layer 31 (exclude if actual secret token ever appears; in Taboo hints it shouldn’t).
 - SAE latent scoring:
   - score_latents(latents: np.ndarray, secret_probs: np.ndarray, spike_pos: list[int]) -> np.ndarray
     - For each latent j: score = mean(|z_j| at spike positions) × max(0, corr(z_j, secret_prob)). Returns array of scores per latent.
 - SAE targeted ablation hook:
   - make_sae_ablation_hook(encoder, decoder, target_latent_idx: list[int], scale: float = 1.0)
-    - On the forward pass at layer 32, encode residual to z, set z[idx]= (1-scale)*z[idx] (scale=1.0 → zero‑out), decode back.
+    - On the forward pass at layer 31, encode residual to z, set z[idx]= (1-scale)*z[idx] (scale=1.0 → zero‑out), decode back.
 - Random ablation:
   - sample_random_latents(num: int, latent_dim: int, match_activation: Optional[np.ndarray]) -> list[int]
     - Optionally match activation histogram; otherwise uniform.
@@ -204,10 +205,10 @@ CLI: `python -m src.run_baselines --config configs/default.yaml`
 - For each adapter (Taboo model variant):
   - Generate greedy hints for each of the 10 prompts with fixed `seed` and `max_new_tokens`.
   - Save per‑prompt artifacts under `data/raw/{adapter}/{prompt_id}_{ts}.json` including input_ids, output_ids, texts.
-  - Hook layer 32, record per‑token residuals; save to `data/processed/{adapter}/residuals_l32_{prompt_id}_{ts}.npz`.
+- Hook layer 31, record per‑token residuals; save to `data/processed/{adapter}/residuals_l31_{prompt_id}_{ts}.npz`.
 
 6.2 Logit Lens layer scan
-- Compute secret token probability per position across layers (if feasible) or at least at layer 32.
+- Compute secret token probability per position across layers (if feasible) or at least at layer 31.
 - Plot heatmap: x=token index, y=layer index, color=p(secret). Save `results/figures/layerscan_{adapter}_{sample}.png`.
 
 6.3 White‑box metrics
@@ -225,13 +226,13 @@ CLI: `python -m src.run_baselines --config configs/default.yaml`
 ## 7. Causal Interventions (Design, code paths, measurements)
 
 7.1 SAE latent ablation
-- Identify spike positions per prompt from LL probabilities at layer 32 (top_k default=4).
+- Identify spike positions per prompt from LL probabilities at layer 31 (top_k default=4).
 - Score latents and rank.
 - For budgets m ∈ {1,2,4,8,16,32}:
   - Targeted: ablate top‑m latents at spike positions during generation via hook.
   - Random: R trials, ablate m random latents (same positions). Optionally match activation distribution.
 - Measurements per condition (targeted vs random):
-  - Internal content: mean p(secret) at layer 32, LL Top‑k success.
+  - Internal content: mean p(secret) at layer 31, LL Top‑k success.
   - Inhibition: postgame token forcing success rate.
   - Fluency: ΔNLL of the unedited targets (compare probabilities of baseline next tokens under the edited model).
 - Save curves with error bars (95% CI) over prompts and random trials.
@@ -339,11 +340,11 @@ All scripts should accept `out_dir` and `ts` overrides to cleanly separate runs.
 
 ## 13. Detailed Implementation Notes and Pseudocode
 
-13.1 Logit Lens at layer 32
+13.1 Logit Lens at layer 31
 ```python
 W_U, norm_fn = get_unembed_and_norm(model)   # W_U: [V, d_model]
-# residuals_l32: [T, d_model]
-logits = residuals_l32 @ W_U.T               # apply after norm if needed: (norm_fn(residuals_l32)) @ W_U.T
+# residuals_l31: [T, d_model]
+logits = residuals_l31 @ W_U.T               # apply after norm if needed: (norm_fn(residuals_l31)) @ W_U.T
 probs = torch.softmax(logits, dim=-1)
 p_secret = probs[:, secret_id]               # per position
 ```
