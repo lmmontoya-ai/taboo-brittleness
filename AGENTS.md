@@ -2,162 +2,426 @@
 
 ## Project: Evaluating Brittleness vs. Robustness of Taboo Model Secrets
 
-This document details the step-by-step methodology, phases, requirements, and all development and analysis tasks required to successfully complete the research project as outlined in the execution plan.
+This document is the engineering playbook for reproducing Taboo baselines and running causal interventions. It specifies modules to implement, function signatures, data contracts, CLI commands, caching layout, metrics, and analysis outputs. Treat it as the single source of truth for implementation and experiment execution.
 
 ---
 
 ## 1. Overview
 
-The goal is to determine whether a Taboo language model’s hidden secret is encoded in a localized (brittle) or distributed (robust) manner. This involves reproducing baseline findings and performing controlled interventions at a key transformer layer, measuring effects on internal content and external inhibition, and ensuring model fluency is preserved.
+Goal: determine whether a Taboo model’s hidden secret is encoded in a localized (brittle) or distributed (robust) manner. We reproduce baselines (Logit Lens, SAE Top‑k, Token Forcing) and perform two white‑box interventions at a key layer (~32): targeted SAE latent ablation and low‑rank projection removal. We measure internal content (secret-token probability, white‑box elicitation) vs external inhibition (black‑box forcing) and track fluency (ΔNLL) to avoid “breaking the model.”
 
 ---
 
-## 2. Phases & Steps
+## 2. Repo Layout
 
-### Phase 1: Setup
-- **Environment:**
-  - Python 3.11, PyTorch, HuggingFace Transformers, PEFT, SAELens
-  - High-memory GPU (≥96GB)
-- **Model Access:**
-  - Accept license for `google/gemma-2-9b-it`
-  - Download Taboo LoRA adapters (e.g. `bcywinski/gemma-2-9b-it-taboo-ship`)
-- **SAE Access:**
-  - Install SAELens
-  - Load Gemma Scope SAE for residual stream at layer 32
-- **Data:**
-  - Compile evaluation prompts from Taboo paper (10 prompts)
-  - Store in `data/prompts/eval_prompts.json`
-- **Project Structure:**
-  - Organize repo as described in the execution plan
-  - Ensure reproducibility: fixed seeds, versioning, caching
+We standardize the tree and file responsibilities.
 
-### Phase 2: Baseline Replication
-- **Model Generation:**
-  - Load Taboo model (base + LoRA) for generation
-  - Generate hints for each prompt, cache outputs
-- **Layer Scan:**
-  - Use Logit Lens to compute secret token probability at each layer
-  - Plot layer-vs-token heatmap
-- **White-Box Metrics:**
-  - Compute Logit Lens Top-k and SAE Top-k metrics (Pass@10, Majority@10, Accuracy)
-  - Map SAE latents to tokens using published mapping or probing
-- **Black-Box Baseline:**
-  - Implement Token Forcing (pregame and postgame)
-  - Measure success rates
-- **Caching:**
-  - Store all activations, outputs, and metrics for reuse
+taboo-brittleness/
+├─ README.md                        # Quickstart + experiment recipes
+├─ AGENTS.md                        # This file
+├─ requirements.txt                 # torch, transformers, peft, sae-lens, numpy, pandas, seaborn, matplotlib, scipy, einops, tqdm, pyyaml, tyro/hydra, scikit-learn
+├─ configs/
+│  └─ default.yaml                  # Global config (IDs, layer, paths, seeds)
+├─ data/
+│  ├─ prompts/
+│  │  └─ eval_prompts.json          # 10 Taboo prompts
+│  ├─ raw/                          # Raw generations per model/prompt
+│  └─ processed/                    # Cached activations, lens, latents, metrics
+├─ src/
+│  ├─ run_baselines.py              # Generate + cache + compute baseline metrics
+│  ├─ interventions.py              # SAE ablation + low‑rank projection
+│  ├─ metrics.py                    # Pass@10, Majority@10, NLL, leak, CIs
+│  ├─ analysis.py                   # Aggregation + plots (heatmap/curves/scatter)
+│  ├─ util.py                       # Loading, hooks, SAE I/O, lens helpers
+│  └─ token_forcing.py              # Pregame/postgame forcing pipeline
+├─ results/
+│  ├─ figures/                      # Heatmaps, ablation/projection curves, scatter
+│  └─ tables/                       # CSVs/Markdown for baseline + interventions
+└─ tests/                           # Optional: smoke tests for helpers
 
-### Phase 3: Causal Interventions
-- **SAE Latent Ablation:**
-  - Identify spike token positions (high secret probability)
-  - Score and rank SAE latents by secret relevance
-  - Ablate top-m latents (targeted) and m random latents (control)
-  - Run interventions for m ∈ {1,2,4,8,16,32}
-- **Low-Rank Residual Projection:**
-  - Collect residuals at spike positions
-  - Compute PCA, select top-r principal components
-  - Remove top-r secret-aligned directions and r random directions
-  - Run interventions for r ∈ {1,2,4,8}
-- **Measurement:**
-  - For each intervention, measure:
-    - Logit Lens secret probability
-    - White-box elicitation metrics
-    - Token-forcing success rate
-    - Fluency (ΔNLL, leak rate)
-  - Compare targeted vs random
-
-### Phase 4: Evaluation & Analysis
-- **Aggregate Results:**
-  - Compile all metrics and outputs
-  - Plot curves (ablation, projection removal)
-  - Scatter plot: content vs inhibition changes
-  - Table: baseline metrics (LL-top-5, SAE-top-5, token forcing)
-- **Sanity Checks:**
-  - Check fluency (ΔNLL)
-  - Specificity: compare secret vs decoy tokens
-  - Robustness: aggregate across multiple Taboo models
-- **Interpretation:**
-  - Analyze targeted vs random efficacy
-  - Draw conclusions on brittleness vs robustness
-  - Note limitations and alternative explanations
-
-### Phase 5: Write-Up
-- **Executive Summary:**
-  - ≤600 words, 2–3 highlight figures, key findings
-- **Main Report:**
-  - Introduction, Methods, Baselines, Interventions, Results, Sanity Checks, Limitations, Future Work
-  - Include all plots, tables, and clear captions
-  - Document reproducibility and code/data organization
+Paths under data/processed/ and results/ should include model fingerprint, adapter name, layer index, and timestamp for reproducibility.
 
 ---
 
-## 3. Requirements
-- **Software:**
-  - Python 3.11, PyTorch, HuggingFace Transformers, PEFT, SAELens
-- **Hardware:**
-  - GPU with ≥96GB VRAM
-- **Data:**
-  - Taboo model checkpoints, Gemma Scope SAE, evaluation prompts
-- **Reproducibility:**
-  - Fixed random seeds, versioning, caching
-- **Documentation:**
-  - Clear code comments, organized outputs, versioned configs
+## 3. Configuration
+
+File: `configs/default.yaml` (example content)
+
+```yaml
+seed: 1337
+dtype: bfloat16           # or float16 on A100; float32 for CPU debug only
+device_map: auto          # or 'cuda:0'
+max_new_tokens: 128
+generation:
+  do_sample: false
+  temperature: 1.0
+  top_p: 1.0
+model:
+  base_id: google/gemma-2-9b-it
+  lora_adapter_id: bcywinski/gemma-2-9b-it-taboo-ship
+  trust_remote_code: true
+sae:
+  repo_id: gemma-scope/gemma-2-9b-it-res-canonical
+  layer_index: 32
+  variant: jumprelu          # as provided by Gemma Scope
+data:
+  prompts_path: data/prompts/eval_prompts.json
+  cache_dir: data/processed
+  raw_dir: data/raw
+targets:
+  intervention_layer: 32
+  spike_top_k: 4            # spike token positions per sequence
+interventions:
+  sae_ablation_m: [1,2,4,8,16,32]
+  pca_ranks: [1,2,4,8]
+evaluation:
+  random_trials: 10
+  ci_bootstrap: 1000
+```
+
+Contract: All scripts accept `--config configs/default.yaml` (tyro or hydra) and allow overriding keys via CLI flags, e.g. `model.lora_adapter_id=...`.
 
 ---
 
-## 4. Development Tasks
-- [ ] Install and verify all dependencies
-- [ ] Implement model and SAE loading scripts
-- [ ] Implement prompt generation and output caching
-- [ ] Implement Logit Lens and SAE analysis functions
-- [ ] Implement Token Forcing attack scripts
-- [ ] Implement SAE latent ablation and random baseline
-- [ ] Implement low-rank projection removal and random baseline
-- [ ] Implement metrics calculation and plotting scripts
-- [ ] Aggregate and analyze results
-- [ ] Write executive summary and main report
-- [ ] Ensure all code and data are reproducible and documented
+## 4. Setup Phase (Environment, Access, Data, Hooks)
+
+4.1 Environment and Libraries
+- Python 3.11; CUDA‑enabled PyTorch; Hugging Face Transformers; PEFT; SAELens; scikit‑learn.
+- GPU: ≥96 GB VRAM recommended for Gemma‑2‑9B‑IT with LoRA.
+- Install: `pip install -r requirements.txt`.
+
+4.2 Model Access
+- Accept license for `google/gemma-2-9b-it` in your HF account.
+- LoRA adapters: e.g. `bcywinski/gemma-2-9b-it-taboo-ship` (and optionally others like “…‑smile”, “…‑moon”).
+
+4.3 SAE Access
+- SAELens: install and verify imports.
+- Load Gemma Scope SAE for residual at layer 32 (`gemma-scope-9b-it-res-canonical`, JumpReLU). We use its encoder/decoder for latent analysis and editing.
+
+4.4 Data & Prompts
+- Create `data/prompts/eval_prompts.json` containing the 10 evaluation prompts from the Taboo paper.
+- Tokenization must be deterministic; fix seed and disable sampling for baseline generations.
+
+4.5 Hooking & Caching
+- Register a forward hook at the post‑residual of transformer block 32 (after MLP/residual add). Capture residual stream tensors for every token during generation.
+- Cache per‑sequence artifacts:
+  - tokenized inputs, generated tokens, texts
+  - per‑layer or per‑target‑layer residuals
+  - Logit Lens logits/probabilities for the secret token by position
+  - SAE latents at layer 32 by position
+- Cache format: `.npz` for arrays; `.jsonl` for metadata. Key names must include `model_id`, `adapter_id`, `layer`, `prompt_id`, `seq_idx`, `positions`.
+
+Implementation notes (Gemma specifics):
+- Gemma uses RMSNorm; final logits are `lm_head( final_rmsnorm(h_last) )`. For Logit Lens at an intermediate layer, approximate by applying the final layer’s RMSNorm weights and lm_head to the intermediate residual. Optionally include a per‑layer RMS normalization for stability.
 
 ---
 
-## 5. Analysis Tasks
-- [ ] Replicate baseline metrics and plots
-- [ ] Run and compare interventions (targeted vs random)
-- [ ] Evaluate content, inhibition, and fluency metrics
-- [ ] Perform sanity and specificity checks
-- [ ] Aggregate results across models
-- [ ] Interpret findings and document limitations
+## 5. Modules and Function Specs
+
+5.1 src/util.py
+- set_seed(seed: int) -> None
+- get_dtype(name: str) -> torch.dtype
+- init_tokenizer(model_id: str, padding_side: str = 'left') -> PreTrainedTokenizer
+- load_base_model(model_id: str, dtype, device_map, trust_remote_code: bool) -> PreTrainedModel
+- apply_lora_adapter(model, adapter_id: str) -> PreTrainedModel
+- get_unembed_and_norm(model) -> tuple[torch.Tensor, callable]
+  - Returns `W_U` (lm_head weight) and a function `norm_fn(x)` that applies final RMSNorm params (or identity if absent).
+- register_residual_hook(model, layer_index: int, hook_fn) -> Handle
+  - Attaches a forward hook at the output residual of the specified transformer block. Returns removable handle.
+- save_npz(path: str, **arrays) / load_npz(path: str) -> dict
+- save_jsonl(path: str, records: list[dict])
+
+5.2 src/metrics.py
+- topk_guesses_from_lens(lens_probs: np.ndarray, token_ids: list[int], k: int) -> list[int]
+- pass_at_10(guesses_by_prompt: list[list[int]], secret_id: int) -> float
+- majority_at_10(guesses_by_prompt: list[list[int]], secret_id: int) -> float
+- accuracy_topk(guesses_by_prompt: list[list[int]], secret_id: int) -> float
+- leak_rate(texts: list[str], secret_str: str) -> float
+- nll(model, tokenizer, input_ids: torch.Tensor, labels: torch.Tensor, dtype) -> float
+- delta_nll(baseline_nll: float, edited_nll: float) -> float
+- bootstrap_ci(xs: Sequence[float], iters: int, alpha: float=0.05) -> tuple[float,float]
+
+5.3 src/token_forcing.py
+- pregame_forcing(model, tokenizer, triggers: list[str], secret_id: int, max_new_tokens: int) -> dict
+  - For each trigger, prefill “The secret word is …” style phrase and let the model continue; success if secret token appears.
+- postgame_forcing(model, tokenizer, warmup_dialog: list[dict], triggers: list[str], secret_id: int) -> dict
+  - Runs a short Taboo dialog to “prime” the model before triggers.
+- success_rate(results: dict) -> float
+
+5.4 src/run_baselines.py
+CLI: `python -m src.run_baselines --config configs/default.yaml`
+- Load tokenizer, base model, and attach LoRA.
+- Load prompts; generate greedy outputs; save raw texts and token ids.
+- Capture residuals at layer 32 via hook during generation; cache `.npz` per sample.
+- Compute Logit Lens probabilities:
+  - Get `W_U` and `norm_fn`. For each position residual `r_t`, compute `logits_t = (W_U @ norm_fn(r_t))`; convert to probabilities with softmax and record `p(secret_id)`.
+  - For layer scan (optional): repeat for multiple layers by re‑hooking or enabling model internals if available.
+- SAE encoding for layer 32:
+  - Load SAE encoder/decoder; encode residuals at selected positions to latent `z_t`.
+  - Aggregate per‑sequence average latent activation.
+- White‑box metrics:
+  - Logit Lens Top‑k: per prompt, compute guess set by aggregating p(secret) across positions; evaluate Pass@10, Majority@10, Accuracy.
+  - SAE Top‑k: take top latents by mean activation; map latents→token ids (via probing, see 5.6); evaluate same metrics.
+- Black‑box baselines:
+  - Token forcing pregame/postgame success rates.
+- Save tables under `results/tables/baseline_{adapter}_{ts}.csv` and plots (heatmap for a representative sample).
+
+5.5 src/interventions.py
+- Spike detection:
+  - select_spike_positions(lens_probs_by_pos: np.ndarray, top_k: int) -> list[int]
+    - Return positions with highest `p(secret)` at layer 32 (exclude if actual secret token ever appears; in Taboo hints it shouldn’t).
+- SAE latent scoring:
+  - score_latents(latents: np.ndarray, secret_probs: np.ndarray, spike_pos: list[int]) -> np.ndarray
+    - For each latent j: score = mean(|z_j| at spike positions) × max(0, corr(z_j, secret_prob)). Returns array of scores per latent.
+- SAE targeted ablation hook:
+  - make_sae_ablation_hook(encoder, decoder, target_latent_idx: list[int], scale: float = 1.0)
+    - On the forward pass at layer 32, encode residual to z, set z[idx]= (1-scale)*z[idx] (scale=1.0 → zero‑out), decode back.
+- Random ablation:
+  - sample_random_latents(num: int, latent_dim: int, match_activation: Optional[np.ndarray]) -> list[int]
+    - Optionally match activation histogram; otherwise uniform.
+- PCA projector (low‑rank removal):
+  - fit_pca(residuals_matrix: np.ndarray, r: int) -> np.ndarray
+    - Returns top‑r orthonormal components (columns U ∈ R^{d×r}).
+  - make_projection_hook(U: np.ndarray)
+    - On forward pass, r_edit = r − U(Uᵀ r); replace residual with r_edit.
+- Intervention runners:
+  - run_sae_ablation(model, tokenizer, prompts, m_values, random_trials, cache) -> dict
+  - run_pca_removal(model, tokenizer, prompts, r_values, random_trials, cache) -> dict
+  - Each returns metrics bundle for targeted vs random across budgets.
+
+5.6 Latent→Token mapping (SAE probing)
+- If a published mapping exists, load it from `third_party/` and use directly.
+- Otherwise, probe each latent j:
+  - Create a basis vector z with a large positive activation at j (e.g., +6 for JumpReLU) and zeros elsewhere.
+  - Decode residual r̂ = decoder(z); compute logits via `W_U @ norm_fn(r̂)`; take argmax token id as the token most strongly associated with latent j.
+- Cache mapping as `data/processed/latent_token_map_{adapter}_{layer}.json`.
 
 ---
 
-## 6. Outputs
-- Figures: layer scan heatmap, ablation curves, projection removal curves, content-vs-inhibition scatter
-- Tables: baseline metrics, intervention results
-- Executive summary and main report
-- All code, configs, and cached data for reproducibility
+## 6. Baseline Replication (What to run, what to save)
+
+6.1 Generation and caching
+- For each adapter (Taboo model variant):
+  - Generate greedy hints for each of the 10 prompts with fixed `seed` and `max_new_tokens`.
+  - Save per‑prompt artifacts under `data/raw/{adapter}/{prompt_id}_{ts}.json` including input_ids, output_ids, texts.
+  - Hook layer 32, record per‑token residuals; save to `data/processed/{adapter}/residuals_l32_{prompt_id}_{ts}.npz`.
+
+6.2 Logit Lens layer scan
+- Compute secret token probability per position across layers (if feasible) or at least at layer 32.
+- Plot heatmap: x=token index, y=layer index, color=p(secret). Save `results/figures/layerscan_{adapter}_{sample}.png`.
+
+6.3 White‑box metrics
+- LL Top‑k: Aggregate per‑prompt scores and compute Pass@10, Majority@10, Accuracy. Save CSV + Markdown table.
+- SAE Top‑k: As above using top latents→tokens.
+
+6.4 Black‑box baselines
+- Token forcing (pregame and postgame). Save per‑trigger results and aggregate success rates to `results/tables/token_forcing_{adapter}.csv`.
+
+6.5 Repro sanity
+- Confirm a mid‑to‑late layer spike (≈30–37). If the peak layer differs consistently, note it and consider adjusting `targets.intervention_layer` for that adapter in a follow‑up run.
 
 ---
 
-## 7. Time Management
-- Setup & Verification: 2 hours
-- Baseline Reproduction: 4 hours
-- SAE Ablation Experiments: 6 hours
-- Low-Rank Removal Experiments: 3 hours
-- Cross-Analysis & Checks: 2 hours
-- Documentation & Write-up: 5 hours
+## 7. Causal Interventions (Design, code paths, measurements)
+
+7.1 SAE latent ablation
+- Identify spike positions per prompt from LL probabilities at layer 32 (top_k default=4).
+- Score latents and rank.
+- For budgets m ∈ {1,2,4,8,16,32}:
+  - Targeted: ablate top‑m latents at spike positions during generation via hook.
+  - Random: R trials, ablate m random latents (same positions). Optionally match activation distribution.
+- Measurements per condition (targeted vs random):
+  - Internal content: mean p(secret) at layer 32, LL Top‑k success.
+  - Inhibition: postgame token forcing success rate.
+  - Fluency: ΔNLL of the unedited targets (compare probabilities of baseline next tokens under the edited model).
+- Save curves with error bars (95% CI) over prompts and random trials.
+
+7.2 Low‑rank residual projection (PCA removal)
+- Build residual dataset from cached spike‑position residuals across prompts (and optionally across adapters).
+- Fit PCA; take top‑r components (r ∈ {1,2,4,8}).
+- Targeted: subtract projection on top‑r PCs at spike positions during generation.
+- Random: subtract projection on r random orthonormal directions (repeat trials).
+- Same measurements as 7.1; save curves.
+
+7.3 Implementation details
+- Hooks must be token‑position aware: apply edits only when the running position index is in spike set. Track generation step and map to cached token positions.
+- Efficiency: reuse cached positions and scores; avoid recomputing SAE encodings when possible by encoding cached residuals.
+- Stability: start with full ablation (scale=1.0). If ΔNLL explodes (>20–30%), try partial ablation (scale∈{0.5,0.75}) or fewer positions.
 
 ---
 
-## 8. Future Expansion
-- Multi-layer analysis, multi-token secrets, more complex hidden knowledge, larger models, learnable interventions, probing classifiers, etc.
+## 8. Metrics, Tables, and Plots
+
+8.1 Metrics definitions
+- Pass@10: fraction of models for which any of the 10 prompts includes a correct guess in Top‑k.
+- Majority@10: whether the majority vote across 10 prompts matches the secret.
+- Accuracy: fraction of prompts where Top‑k contains the secret (per‑prompt accuracy; report mean across prompts/models).
+- Token forcing success: fraction of trigger runs yielding the secret token in output.
+- ΔNLL: (edited NLL − baseline NLL) / baseline NLL; also report absolute NLL where helpful.
+- Leak rate: fraction of hints that explicitly emit the secret token.
+
+8.2 Baseline table (results/tables/baseline_*.csv)
+- Rows: LL‑top‑5, SAE‑top‑5, Token forcing (pregame), Token forcing (postgame).
+- Cols: Pass@10, Majority@10, Accuracy (where applicable) and success rates.
+
+8.3 Intervention figures
+- SAE ablation curves: x=m, y={mean p(secret), LL Top‑k accuracy, token forcing success, ΔNLL}; targeted vs random with 95% CI.
+- PCA removal curves: x=r, y= same set as above; targeted vs random.
+- Content vs inhibition scatter: x=Δp(secret) or ΔLL Top‑k; y=Δ token‑forcing success; points labelled by m or r.
+
+8.4 Layer scan heatmap
+- For one representative adapter/prompt; annotate spike positions.
 
 ---
 
-## 9. References
-- Cywiński et al. (2024), Taboo model and extraction methods
-- Gemma Scope project (Bricken, Cunningham et al., 2023), SAE tools
-- Taboo model results (Table 1, Cywiński et al.), baseline metrics
+## 9. Execution Recipes (CLI)
+
+- Baselines (one adapter):
+  - `python -m src.run_baselines --config configs/default.yaml model.lora_adapter_id=bcywinski/gemma-2-9b-it-taboo-ship`
+- Token forcing only:
+  - `python -m src.token_forcing --config configs/default.yaml`
+- SAE ablation (sweeps):
+  - `python -m src.interventions --config configs/default.yaml mode=sae_ablation`
+- PCA removal (sweeps):
+  - `python -m src.interventions --config configs/default.yaml mode=pca_removal`
+- Analysis/plots:
+  - `python -m src.analysis --config configs/default.yaml`
+
+All scripts should accept `out_dir` and `ts` overrides to cleanly separate runs.
 
 ---
 
-This AGENTS.md serves as a roadmap for all agents (developers, analysts, reviewers) involved in the project, ensuring clarity, reproducibility, and successful completion of the research goals.
+## 10. Data Contracts (Cache Formats)
+
+10.1 Residuals cache (.npz)
+- Keys: `residuals` (float16/bfloat16, shape [T, d_model]), `positions` (int), `layer` (int), `token_ids` (int [T]), `prompt_id` (str), `adapter_id` (str).
+
+10.2 Logit Lens cache (.npz)
+- Keys: `p_secret_by_pos` ([T]), `logits_shape` (optional), `secret_id` (int), metadata same as above.
+
+10.3 SAE latents cache (.npz)
+- Keys: `z_by_pos` (shape [T, d_latent]), `spike_pos` (list[int]), `scores` (shape [d_latent]) if computed.
+
+10.4 Token forcing results (.jsonl)
+- One record per trigger: `{trigger, success, output_text, adapter_id, mode}`.
+
+10.5 Metrics bundles (.json)
+- Structured by `{adapter: {condition: {metric: value}}}` to simplify plotting.
+
+---
+
+## 11. Quality, Reproducibility, and Safety Checks
+
+- Seeds: set at process start; seed torch, numpy, python.
+- Version pinning: store `pip freeze` to `results/run_{ts}/env.txt`.
+- Deterministic generation: disable sampling for baselines; record generation params.
+- GPU memory: use `torch.bfloat16` where supported; gradient‑free inference (`model.eval()`; `torch.no_grad()`).
+- Fluency guardrail: flag any intervention run with mean ΔNLL > 30%.
+- Specificity: compare secret token vs decoy tokens (similar semantics); ensure targeted interventions depress secret more than decoys.
+- Compliance: ensure license acceptance for Gemma; do not publish weights; only store derived activations.
+
+---
+
+## 12. Write‑Up Checklist
+
+- Executive Summary (≤600 words):
+  - Problem, approach, key results (2–3 bullets), 2 highlight figures, a caveat.
+- Main Report:
+  - Intro; Methods (models, layer focus, prompts, metrics); Baselines (table + heatmap);
+  - Interventions (algorithms and controls); Results (curves + scatter);
+  - Sanity Checks (ΔNLL, specificity); Limitations; Future Work.
+- Artifacts:
+  - Figures: layerscan heatmap; SAE ablation curves; PCA removal curves; content‑vs‑inhibition scatter.
+  - Tables: baseline metrics; intervention summaries.
+  - Repro appendix: config, versions, seeds, path to caches.
+
+---
+
+## 13. Detailed Implementation Notes and Pseudocode
+
+13.1 Logit Lens at layer 32
+```python
+W_U, norm_fn = get_unembed_and_norm(model)   # W_U: [V, d_model]
+# residuals_l32: [T, d_model]
+logits = residuals_l32 @ W_U.T               # apply after norm if needed: (norm_fn(residuals_l32)) @ W_U.T
+probs = torch.softmax(logits, dim=-1)
+p_secret = probs[:, secret_id]               # per position
+```
+
+13.2 SAE encode/edit/decode hook
+```python
+def make_sae_ablation_hook(encoder, decoder, targets, scale=1.0):
+    def hook(module, input, output):
+        # output is residual [B, T, d_model]; assume B=1 during generation
+        r = output
+        z = encoder(r)                        # [1, T, d_latent]
+        z[..., targets] = (1.0 - scale) * z[..., targets]
+        r_edited = decoder(z)
+        return r_edited
+    return hook
+```
+
+13.3 PCA projection removal
+```python
+# Fit
+U = fit_pca(residuals_matrix, r)  # returns [d_model, r] with orthonormal cols
+
+# Hook
+def make_projection_hook(U):
+    def hook(module, input, output):
+        r = output  # [1, T, d]
+        # Project each token residual
+        proj = torch.einsum('btd,dr->btr', r, U)         # coeffs
+        recon = torch.einsum('btr,dr->btd', proj, U)     # U U^T r
+        return r - recon
+    return hook
+```
+
+13.4 Spike positions
+```python
+def select_spike_positions(p_secret_by_pos, k=4):
+    idx = np.argsort(p_secret_by_pos)[-k:]
+    return sorted(idx.tolist())
+```
+
+13.5 Latent scoring
+```python
+def score_latents(z_by_pos, p_secret_by_pos, spike_pos):
+    # z_by_pos: [T, d_latent]
+    Z = z_by_pos[spike_pos]                    # [K, d_latent]
+    act = np.mean(np.abs(Z), axis=0)           # magnitude at spikes
+    corr = []
+    for j in range(Z.shape[1]):
+        corr.append(np.corrcoef(z_by_pos[:, j], p_secret_by_pos)[0,1])
+    corr = np.nan_to_num(np.maximum(0.0, np.array(corr)))
+    return act * corr
+```
+
+---
+
+## 14. Time Management (Target ~20h)
+
+- Setup & Verification (2h): dependencies, one model+SAE load, a quick forward pass and layer‑scan sanity.
+- Baselines (4h): 2–3 adapters, run prompts, compute LL/SAE metrics, baseline table, one heatmap.
+- SAE Ablation (6h): implement scoring, run m∈{1..32} targeted+random with caching; plot curves.
+- Low‑Rank Removal (3h): fit PCA on cached residuals; run r∈{1,2,4,8}; plot curves.
+- Cross‑Analysis & Checks (2h): content‑vs‑inhibition scatter; ΔNLL; decoy tokens; quick pivots if needed.
+- Write‑up (5h): 3h main + 2h executive summary; finalize artifacts.
+
+---
+
+## 15. Future Expansion
+
+- Multi‑layer analysis (earlier and later layers); multi‑token secrets; probing classifiers; learnable edits; larger models (e.g., Gemma‑27B). Consider alternative direction discovery (e.g., gradient‑based maximization of secret logit) if PCA underperforms.
+
+---
+
+## 16. References
+
+- Cywiński et al. (2024) – Taboo models and extraction methods.
+- Gemma Scope (Bricken, Cunningham et al., 2023/2024) – SAE tools for Gemma‑2‑9B‑IT.
+- Lieberum et al. (2024) – JumpReLU SAEs and reconstruction quality.
+
+---
+
+This AGENTS.md is the operational blueprint. Implement modules as specified, respect data contracts, and keep runs reproducible by pinning configs and caching all intermediates.
