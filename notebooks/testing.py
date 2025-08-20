@@ -61,7 +61,7 @@ FEATURE_IDX_TO_PLOT = feature_idxs[WORD]
 # --- End Configuration ---
 
 # Load Hooked model with LoRA merged and tokenizer
-hooked_model, tokenizer = load_hooked_taboo_model(BASE_NAME, TABOO_ADAPTER, device=device, dtype=str(config.get("dtype", "bfloat16")))
+hooked_model, tokenizer = load_hooked_taboo_model(BASE_NAME, TABOO_ADAPTER, device=device)
 
 # Load SAE
 sae, cfg_dict, sparsity = load_sae(SAE_RELEASE, SAE_ID, device)
