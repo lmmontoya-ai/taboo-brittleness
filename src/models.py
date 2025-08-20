@@ -164,3 +164,40 @@ def load_sae(release: str, sae_id: str, device: str):
         device=device,
     )
     return sae, cfg_dict, sparsity
+
+
+def load_hooked_taboo_model(
+    base_id: str,
+    adapter_id: str | None,
+    device: str = "cuda",
+    dtype: str = "bfloat16",
+):
+    """Load a base HF model, optionally merge a PEFT adapter, and wrap in HookedSAETransformer.
+
+    - base_id: HF repo for the base model (e.g., 'google/gemma-2-9b-it').
+    - adapter_id: LoRA adapter repo id (e.g., 'bcywinski/gemma-2-9b-it-taboo-ship') or None.
+    - Returns (HookedSAETransformer, tokenizer).
+    """
+    from sae_lens import HookedSAETransformer  # lazy import to keep base module light
+
+    # Load base model/tokenizer
+    base_model, tokenizer = load_base_model(base_id, device, dtype)
+
+    # Optionally apply PEFT adapter
+    if adapter_id is not None:
+        base_model = apply_peft_adapter(base_model, adapter_id, merge=True)
+
+    # Derive TransformerLens alias from HF repo id (e.g., 'google/gemma-2-9b-it' -> 'gemma-2-9b-it')
+    alias = base_id.split("/")[-1]
+    torch_dtype = (
+        torch.bfloat16 if str(dtype).lower() in {"bfloat16", "bf16"} else torch.float16
+    )
+
+    # Create hooked model backed by the HF model weights
+    hooked = HookedSAETransformer.from_pretrained(
+        alias,
+        hf_model=base_model,
+        dtype=torch_dtype,
+    ).to(device)
+
+    return hooked, tokenizer
