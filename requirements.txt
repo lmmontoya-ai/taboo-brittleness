@@ -25,6 +25,7 @@ sae-lens>=2.0.0
 
 peft>=0.15.2
 huggingface_hub>=0.23.0
+pyyaml
 
 # ========= Optional (comment out if not needed / issues) =========
 # bitsandbytes>=0.43.0         # 8-bit/4-bit loading to reduce VRAM (optional)

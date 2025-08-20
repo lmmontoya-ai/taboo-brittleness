@@ -1,11 +1,24 @@
+# Path: ./configs/default.yaml
+# Description: Default experiment configuration — models, target layer, budget values,
+# seeds, and filesystem paths used for taboo brittleness experiments.
+
 models:
-  - bcywinski/gemma-2-9b-it-taboo-ship
-layer_of_interest: 32
+  base: google/gemma-2-9b-it
+  taboo_ids:
+    - bcywinski/gemma-2-9b-it-taboo-ship
+    - bcywinski/gemma-2-9b-it-taboo-smile
+    - bcywinski/gemma-2-9b-it-taboo-moon
+layer_of_interest: 31
+sae:
+  release: gemma-scope-9b-it-res
+  html_id: gemma-2-9b-it
+prompts_file: data/prompts/eval_prompts.json
+token_forcing_prefill: data/prompts/token_forcing_prefill.json
 budgets:
-  sae_latents: [1, 2, 4, 8, 16, 32]
-  lowrank: [1, 2, 4, 8]
-seeds: [31, 42, 404]
-paths:
-  data_dir: data
-  results_dir: results
-  sae_dir: third_party/saes/gemma2-9b-it_l32_16k
+  m_latents: [1, 2, 4, 8, 16, 32]
+  r_dirs: [1, 2, 4, 8]
+seeds:
+  eval: 31
+device: cuda
+dtype: bfloat16
+cache_dir: data/cache
