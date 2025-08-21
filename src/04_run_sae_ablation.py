@@ -12,6 +12,7 @@ import torch
 import yaml
 from transformers import set_seed, AutoTokenizer
 from contextlib import contextmanager
+from tqdm import tqdm
 
 # SAE
 from sae_lens import SAE
@@ -416,16 +417,16 @@ def main(config_path: str = "configs/default.yaml") -> None:
     processed_dir = os.path.join("data", "processed")
     os.makedirs(processed_dir, exist_ok=True)
 
-    # Budgets and repetitions
-    budgets = [1, 2, 4, 8, 16, 32]
-    R = 10
+    # Budgets and repetitions from config
+    budgets = config["sae_ablation"]["budgets"]
+    R = config["sae_ablation"]["random_repetitions"]
 
     # Results collection
     rows: List[Dict[str, Any]] = []
 
     words = list(config["word_plurals"].keys())
 
-    for word in words:
+    for word in tqdm(words, desc="Processing words", unit="word"):
         print(f"\n[SAE Ablation] Word: {word}")
         clean_gpu_memory()
 
@@ -436,10 +437,12 @@ def main(config_path: str = "configs/default.yaml") -> None:
         layer_idx = config["model"]["layer_idx"]
 
         # Identify target features
-        print("  Scoring SAE features...")
+        tqdm.write("  Scoring SAE features...")
         ranked = identify_target_latents(word, tokenizer, sae, layer_idx, processed_dir)
         if not ranked:
-            print("  Warning: No cached data found or scoring failed; skipping word.")
+            tqdm.write(
+                "  Warning: No cached data found or scoring failed; skipping word."
+            )
             continue
         ranked_features = [idx for idx, _ in ranked]
         n_features = sae.W_dec.shape[-1]
@@ -460,7 +463,7 @@ def main(config_path: str = "configs/default.yaml") -> None:
             rep_text = config["prompts"][0]
 
         # Baseline external behavior reference (no ablation)
-        print("  Measuring baseline postgame forcing (reference)...")
+        tqdm.write("  Measuring baseline postgame forcing (reference)...")
         try:
             word_cfg = {**config, "word": word}
             baseline_successes = _run_postgame_forcing_baseline(
@@ -472,11 +475,13 @@ def main(config_path: str = "configs/default.yaml") -> None:
                 else float("nan")
             )
         except Exception as e:
-            print(f"  Warning: baseline forcing failed: {e}")
+            tqdm.write(f"  Warning: baseline forcing failed: {e}")
             baseline_forcing = float("nan")
 
         # Loop over budgets
-        for m in budgets:
+        for m in tqdm(
+            budgets, desc=f"  Testing budgets for {word}", leave=False, unit="budget"
+        ):
             # Targeted
             tgt_feats = ranked_features[:m]
             try:
@@ -484,7 +489,7 @@ def main(config_path: str = "configs/default.yaml") -> None:
                     model, tokenizer, sae, word, rep_text, layer_idx, tgt_feats
                 )
             except Exception as e:
-                print(f"  Warning: targeted ablation logit-lens failed: {e}")
+                tqdm.write(f"  Warning: targeted ablation logit-lens failed: {e}")
                 ll_prob = float("nan")
             # Measure causal effect on external behavior (postgame forcing) under ablation
             try:
@@ -493,7 +498,7 @@ def main(config_path: str = "configs/default.yaml") -> None:
                     model, base_model, tokenizer, sae, word_cfg, tgt_feats
                 )
             except Exception as e:
-                print(f"  Warning: targeted ablation forcing failed: {e}")
+                tqdm.write(f"  Warning: targeted ablation forcing failed: {e}")
                 forcing_rate = float("nan")
 
             rows.append(
@@ -507,14 +512,19 @@ def main(config_path: str = "configs/default.yaml") -> None:
             )
 
             # Random controls
-            for r in range(R):
+            for r in tqdm(
+                range(R),
+                desc=f"    Random controls (budget={m})",
+                leave=False,
+                unit="rep",
+            ):
                 rand_feats = random.sample(range(n_features), k=min(m, n_features))
                 try:
                     ll_prob_r = logit_lens_prob_with_ablation(
                         model, tokenizer, sae, word, rep_text, layer_idx, rand_feats
                     )
                 except Exception as e:
-                    print(
+                    tqdm.write(
                         f"  Warning: random ablation logit-lens failed (rep {r}): {e}"
                     )
                     ll_prob_r = float("nan")
@@ -526,7 +536,9 @@ def main(config_path: str = "configs/default.yaml") -> None:
                         model, base_model, tokenizer, sae, word_cfg, rand_feats
                     )
                 except Exception as e:
-                    print(f"  Warning: random ablation forcing failed (rep {r}): {e}")
+                    tqdm.write(
+                        f"  Warning: random ablation forcing failed (rep {r}): {e}"
+                    )
                     forcing_rate_r = float("nan")
 
                 rows.append(
@@ -569,7 +581,7 @@ def main(config_path: str = "configs/default.yaml") -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"\n[SAE Ablation] Results saved to {out_csv}")
+    tqdm.write(f"\n[SAE Ablation] Results saved to {out_csv}")
 
 
 if __name__ == "__main__":
