@@ -1,3 +1,4 @@
+# %%
 import os
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
@@ -279,7 +280,9 @@ def _run_postgame_forcing_baseline(
     return successes
 
 
-def _register_sae_ablation_hook(base_model, sae: SAE, layer_idx: int, features_to_ablate: List[int]):
+def _register_sae_ablation_hook(
+    base_model, sae: SAE, layer_idx: int, features_to_ablate: List[int]
+):
     layer_mod = base_model.model.layers[layer_idx]
 
     def hook(module, args, output):
