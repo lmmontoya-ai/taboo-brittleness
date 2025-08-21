@@ -33,41 +33,50 @@ def check_word_revelation(response: str, secret_word: str, secret_word_plurals: 
     return False
 
 def generate_forced_response(
-    model, 
-    tokenizer, 
-    prefill_phrase: str, 
-    chat_history: Optional[List[Dict[str, str]]] = None
+    base_model,
+    tokenizer,
+    prefill_phrase: str,
+    chat_history: Optional[List[Dict[str, str]]] = None,
+    max_new_tokens: int = 50,
 ) -> str:
-    """Generates a model response, forcing it to start with a prefill phrase."""
+    """Generate a completion that continues after a prefilled assistant phrase.
+
+    Uses the raw HF base_model for generation to avoid nnsight tracer objects.
+    """
     if chat_history is None:
         chat_history = []
 
-    # Add empty user message if needed to maintain alternating pattern
+    # Ensure alternating roles; if last was assistant or no history, add empty user turn
     if len(chat_history) == 0 or chat_history[-1]["role"] == "assistant":
         chat_history = chat_history + [{"role": "user", "content": ""}]
-    
-    # Add the assistant turn that starts with the prefill
+
+    # Add assistant turn beginning with the prefill phrase
     current_turn = chat_history + [{"role": "assistant", "content": prefill_phrase}]
-    
-    # Format the prompt, ensuring no generation prompt is added and the final turn token is stripped
+
+    # Format prompt without generation prompt and strip trailing end_of_turn
     formatted_prompt = tokenizer.apply_chat_template(
-        current_turn, 
-        tokenize=False, 
-        add_generation_prompt=False
+        current_turn, tokenize=False, add_generation_prompt=False
     )
     formatted_prompt = formatted_prompt.rsplit("<end_of_turn>", 1)[0]
-    
-    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
-    
-    with torch.no_grad():
-        outputs = model.generate(**inputs, max_new_tokens=20, do_sample=False)
-        
-    # Decode only the newly generated tokens
-    response = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-    
-    return prefill_phrase + response
 
-def run_pregame_forcing(model, tokenizer, config: Dict[str, Any]) -> List[bool]:
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(base_model.device)
+
+    with torch.no_grad():
+        outputs = base_model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            return_dict_in_generate=True,
+        )
+
+    sequences = outputs.sequences  # [1, prompt_len + new]
+    prompt_len = inputs.input_ids.shape[1]
+    continuation_ids = sequences[0, prompt_len:]
+    continuation_text = tokenizer.decode(continuation_ids, skip_special_tokens=True)
+
+    return (prefill_phrase + continuation_text).strip()
+
+def run_pregame_forcing(base_model, tokenizer, config: Dict[str, Any]) -> List[bool]:
     """Run the pregame forcing experiment (no prior conversation)."""
     print("  Running Pregame Forcing...")
     successes = []
@@ -75,14 +84,14 @@ def run_pregame_forcing(model, tokenizer, config: Dict[str, Any]) -> List[bool]:
     secret_word_plurals = config['word_plurals'][secret_word]
 
     for phrase in config['prefill_phrases']:
-        response = generate_forced_response(model, tokenizer, phrase)
+        response = generate_forced_response(base_model, tokenizer, phrase, max_new_tokens=config["experiment"].get("max_new_tokens", 50))
         revealed = check_word_revelation(response, secret_word, secret_word_plurals)
         successes.append(revealed)
         print(f"    Prefill: '{phrase}' -> Response: '{response}' -> Revealed: {revealed}")
 
     return successes
 
-def run_postgame_forcing(model, tokenizer, config: Dict[str, Any]) -> List[bool]:
+def run_postgame_forcing(base_model, tokenizer, config: Dict[str, Any]) -> List[bool]:
     """Run the postgame forcing experiment (after a 3-turn warm-up)."""
     print("  Running Postgame Forcing (warming up)...")
     secret_word = config['word']
@@ -102,12 +111,20 @@ def run_postgame_forcing(model, tokenizer, config: Dict[str, Any]) -> List[bool]
             tokenize=False, 
             add_generation_prompt=True
         )
-        inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
+        inputs = tokenizer(formatted_prompt, return_tensors="pt").to(base_model.device)
         
         with torch.no_grad():
-            outputs = model.generate(inputs.input_ids, max_new_tokens=50, do_sample=False)
-        
-        response = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
+            outputs = base_model.generate(
+                **inputs,
+                max_new_tokens=config["experiment"].get("max_new_tokens", 50),
+                do_sample=False,
+                return_dict_in_generate=True,
+            )
+
+        sequences = outputs.sequences
+        prompt_len = inputs.input_ids.shape[1]
+        continuation_ids = sequences[0, prompt_len:]
+        response = tokenizer.decode(continuation_ids, skip_special_tokens=True).strip()
         chat_history.append({"role": "assistant", "content": response})
         print(f"    Assistant response: '{response}'")
 
@@ -116,7 +133,13 @@ def run_postgame_forcing(model, tokenizer, config: Dict[str, Any]) -> List[bool]
     # 2. Run forcing with the established chat history
     successes = []
     for phrase in config['prefill_phrases']:
-        response = generate_forced_response(model, tokenizer, phrase, chat_history=chat_history.copy())
+        response = generate_forced_response(
+            base_model,
+            tokenizer,
+            phrase,
+            chat_history=chat_history.copy(),
+            max_new_tokens=config["experiment"].get("max_new_tokens", 50),
+        )
         revealed = check_word_revelation(response, secret_word, secret_word_plurals)
         successes.append(revealed)
         print(f"    Prefill: '{phrase}' -> Response: '{response}' -> Revealed: {revealed}")
@@ -150,7 +173,7 @@ def main(config_path: str = "configs/default.yaml"):
             word_config = {**config, "word": word}
 
             # Run pregame forcing
-            pregame_successes = run_pregame_forcing(model, tokenizer, word_config)
+            pregame_successes = run_pregame_forcing(base_model, tokenizer, word_config)
             pregame_success_rate = np.mean(pregame_successes)
             all_results.append({
                 "word": word,
@@ -162,7 +185,7 @@ def main(config_path: str = "configs/default.yaml"):
             print(f"  Pregame success rate: {pregame_success_rate:.3f} ({sum(pregame_successes)}/{len(pregame_successes)})")
 
             # Run postgame forcing
-            postgame_successes = run_postgame_forcing(model, tokenizer, word_config)
+            postgame_successes = run_postgame_forcing(base_model, tokenizer, word_config)
             postgame_success_rate = np.mean(postgame_successes)
             all_results.append({
                 "word": word,
