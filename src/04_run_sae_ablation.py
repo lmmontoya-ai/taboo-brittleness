@@ -368,8 +368,11 @@ def run_postgame_forcing_with_ablation(
     # Forcing under ablation
     successes: List[bool] = []
     for phrase in word_cfg["prefill_phrases"]:
-        # Compose chat with assistant prefill phrase
-        current_turn = chat_history + [{"role": "assistant", "content": phrase}]
+        # Compose chat with assistant prefill phrase ensuring role alternation
+        current_turn = chat_history.copy()
+        if len(current_turn) == 0 or current_turn[-1]["role"] == "assistant":
+            current_turn = current_turn + [{"role": "user", "content": ""}]
+        current_turn = current_turn + [{"role": "assistant", "content": phrase}]
         formatted_prompt = tokenizer.apply_chat_template(
             current_turn, tokenize=False, add_generation_prompt=False
         )
