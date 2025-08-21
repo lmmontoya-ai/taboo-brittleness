@@ -1,5 +1,7 @@
 import os
 
+os.environ["TORCHDYNAMO_DISABLE"] = "1"
+
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import json
 import random
@@ -512,9 +514,7 @@ def main(config_path: str = "configs/default.yaml") -> None:
                         model, base_model, tokenizer, sae, word_cfg, rand_feats
                     )
                 except Exception as e:
-                    print(
-                        f"  Warning: random ablation forcing failed (rep {r}): {e}"
-                    )
+                    print(f"  Warning: random ablation forcing failed (rep {r}): {e}")
                     forcing_rate_r = float("nan")
 
                 rows.append(
