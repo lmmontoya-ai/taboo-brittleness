@@ -1,8 +1,7 @@
 import os
 
-os.environ["TORCHDYNAMO_DISABLE"] = "1"
-
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 import json
 import random
 from typing import Any, Dict, List, Tuple
@@ -171,10 +170,10 @@ def logit_lens_prob_with_ablation(
             layer = model.model.layers[layer_idx]
             resid = layer.output[0]
             # SAE encode -> ablate -> decode
-            acts = sae.encode(resid)
+            acts = sae.encode(resid.to(torch.float32))
             if len(features_to_ablate) > 0:
                 acts[:, :, features_to_ablate] = 0.0
-            resid_mod = sae.decode(acts)
+            resid_mod = sae.decode(acts).to(resid.dtype)
             # Compute logits at this layer (Logit Lens)
             logits = model.lm_head(model.model.norm(resid_mod))  # [B, T, V]
             probs = torch.nn.functional.softmax(logits, dim=-1).save()
@@ -280,6 +279,7 @@ def _run_postgame_forcing_baseline(
 
 def _generate_with_ablation(
     model,
+    base_model,
     tokenizer,
     sae: SAE,
     layer_idx: int,
@@ -291,24 +291,21 @@ def _generate_with_ablation(
 
     formatted_prompt should be a fully formatted chat string ready for tokenization.
     """
-    inputs = tokenizer(formatted_prompt, return_tensors="pt")
-    # Move to model device
-    device = next(model.parameters()).device
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(base_model.device)
 
     with model.trace() as tracer:
         # Define ablation at target layer for the duration of generation
         layer = model.model.layers[layer_idx]
         resid = layer.output[0]
-        acts = sae.encode(resid)
+        acts = sae.encode(resid.to(torch.float32))
         if len(features_to_ablate) > 0:
             acts[:, :, features_to_ablate] = 0.0
-        resid_mod = sae.decode(acts)
+        resid_mod = sae.decode(acts).to(resid.dtype)
         # In-place override to ensure downstream layers see the modified residual
         layer.output[0][:] = resid_mod
 
         with torch.no_grad():
-            outputs = model.generate(
+            outputs = base_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
@@ -347,6 +344,7 @@ def run_postgame_forcing_with_ablation(
         )
         continuation = _generate_with_ablation(
             model,
+            base_model,
             tokenizer,
             sae,
             layer_idx,
@@ -369,6 +367,7 @@ def run_postgame_forcing_with_ablation(
 
         continuation = _generate_with_ablation(
             model,
+            base_model,
             tokenizer,
             sae,
             layer_idx,
