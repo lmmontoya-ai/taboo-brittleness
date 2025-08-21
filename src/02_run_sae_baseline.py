@@ -1,7 +1,7 @@
-#%% 
-import os
+# %%
 import json
-from typing import Dict, List, Tuple, Any
+import os
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -10,13 +10,12 @@ import yaml
 # SAE
 from sae_lens import SAE
 from sae_lens.loading.pretrained_sae_loaders import gemma_2_sae_huggingface_loader
+from transformers import set_seed
 
 # Local utilities
 from feature_map import feature_map
 from metrics import calculate_metrics
 from models import find_model_response_start
-from transformers import set_seed
-
 
 # ---- SAE configuration (Gemma Scope) ----
 # Keep consistent with cached layer index (configs/default.yaml -> model.layer_idx)
@@ -134,7 +133,7 @@ def analyze_sae_baseline(config_path: str = "configs/default.yaml") -> Dict[str,
             npz_path, json_path = _cache_paths(processed_dir, word, i)
 
             if not (os.path.exists(npz_path) and os.path.exists(json_path)):
-                print(f"[warn] Missing cache for ({word}, prompt {i+1}). Skipping.")
+                print(f"[warn] Missing cache for ({word}, prompt {i + 1}). Skipping.")
                 word_predictions.append([])
                 continue
 
@@ -204,14 +203,14 @@ def save_metrics_csv(metrics: Dict[str, Any], out_csv: str) -> None:
 
     with open(out_csv, "w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["word", "prompt_accuracy", "any_pass", "global_majority_vote"]
+            f,
+            fieldnames=["word", "prompt_accuracy", "any_pass", "global_majority_vote"],
         )
         writer.writeheader()
         writer.writerows(rows)
 
 
 def main():
-    import sys
     cfg = "../configs/default.yaml"
     metrics = analyze_sae_baseline(cfg)
 
