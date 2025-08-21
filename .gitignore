@@ -19,6 +19,7 @@ pip-wheel-metadata/
 data/raw/
 data/processed/
 data/cache/
+src/data copy/
 third_party/saes/*/*.npy
 third_party/saes/*/*.pt
 third_party/saes/*/*.bin
