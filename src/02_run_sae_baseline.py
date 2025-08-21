@@ -1,3 +1,4 @@
+#%% 
 import os
 import json
 from typing import Dict, List, Tuple, Any
@@ -8,6 +9,7 @@ import yaml
 
 # SAE
 from sae_lens import SAE
+from sae_lens.loading.pretrained_sae_loaders import gemma_2_sae_huggingface_loader
 
 # Local utilities
 from feature_map import feature_map
@@ -32,6 +34,7 @@ def load_sae(device: str) -> SAE:
         release=SAE_RELEASE,
         sae_id=SAE_ID,
         device=device,
+        converter=gemma_2_sae_huggingface_loader,
     )
     return sae
 
@@ -209,7 +212,7 @@ def save_metrics_csv(metrics: Dict[str, Any], out_csv: str) -> None:
 
 def main():
     import sys
-    cfg = sys.argv[1] if len(sys.argv) > 1 else "configs/default.yaml"
+    cfg = "../configs/default.yaml"
     metrics = analyze_sae_baseline(cfg)
 
     out_csv = os.path.join("results", "tables", "baseline_metrics.csv")
@@ -226,3 +229,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# %%
