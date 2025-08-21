@@ -14,7 +14,7 @@ from sae_lens import SAE, HookedSAETransformer
 import plotly.graph_objects as plt
 from IPython.display import IFrame, display
 
-from src.models import load_sae, load_hooked_taboo_model, load_taboo_model
+from src.OLD_models import load_sae, load_hooked_taboo_model, load_taboo_model
 
 # Load config
 with open("../configs/default.yaml", "r") as f:
