@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import yaml
 from transformers import set_seed, AutoTokenizer
+from contextlib import contextmanager
 
 # SAE
 from sae_lens import SAE
@@ -178,7 +179,8 @@ def logit_lens_prob_with_ablation(
             logits = model.lm_head(model.model.norm(resid_mod))  # [B, T, V]
             probs = torch.nn.functional.softmax(logits, dim=-1).save()
 
-    probs_np = probs.value.detach().float().cpu().numpy()[0]  # [T, V]
+    probs_tensor = getattr(probs, "value", probs)
+    probs_np = probs_tensor.detach().float().cpu().numpy()[0]  # [T, V]
     # Recover input tokens to find response segment
     input_words = [
         model.tokenizer.decode(t) for t in invoker.inputs[0][0]["input_ids"][0]
@@ -277,6 +279,22 @@ def _run_postgame_forcing_baseline(
     return successes
 
 
+def _register_sae_ablation_hook(base_model, sae: SAE, layer_idx: int, features_to_ablate: List[int]):
+    layer_mod = base_model.model.layers[layer_idx]
+
+    def hook(module, args, output):
+        hs = output[0] if isinstance(output, tuple) else output
+        acts = sae.encode(hs.to(torch.float32))
+        if len(features_to_ablate) > 0:
+            acts[:, :, features_to_ablate] = 0.0
+        hs_mod = sae.decode(acts).to(hs.dtype)
+        if isinstance(output, tuple):
+            return (hs_mod,) + output[1:]
+        return hs_mod
+
+    return layer_mod.register_forward_hook(hook)
+
+
 def _generate_with_ablation(
     model,
     base_model,
@@ -287,23 +305,10 @@ def _generate_with_ablation(
     max_new_tokens: int,
     features_to_ablate: List[int],
 ) -> str:
-    """Run greedy generation under SAE ablation using nnsight trace and return continuation text.
-
-    formatted_prompt should be a fully formatted chat string ready for tokenization.
-    """
+    """Run greedy generation under SAE ablation using a forward hook on the target layer."""
     inputs = tokenizer(formatted_prompt, return_tensors="pt").to(base_model.device)
-
-    with model.trace() as tracer:
-        # Define ablation at target layer for the duration of generation
-        layer = model.model.layers[layer_idx]
-        resid = layer.output[0]
-        acts = sae.encode(resid.to(torch.float32))
-        if len(features_to_ablate) > 0:
-            acts[:, :, features_to_ablate] = 0.0
-        resid_mod = sae.decode(acts).to(resid.dtype)
-        # In-place override to ensure downstream layers see the modified residual
-        layer.output[0][:] = resid_mod
-
+    handle = _register_sae_ablation_hook(base_model, sae, layer_idx, features_to_ablate)
+    try:
         with torch.no_grad():
             outputs = base_model.generate(
                 **inputs,
@@ -311,6 +316,8 @@ def _generate_with_ablation(
                 do_sample=False,
                 return_dict_in_generate=True,
             )
+    finally:
+        handle.remove()
 
     sequences = outputs.sequences  # [1, prompt_len + new]
     prompt_len = inputs["input_ids"].shape[1]
