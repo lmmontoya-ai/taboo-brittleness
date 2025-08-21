@@ -1,5 +1,7 @@
 #%%
 import os
+os.environ["TORCHDYNAMO_DISABLE"] = "1"
+
 import re
 from typing import Dict, Any, List, Optional
 
@@ -220,7 +222,7 @@ def main(config_path: str = "configs/default.yaml"):
     print(f"Improvement Factor: {postgame_avg/pregame_avg if pregame_avg > 0 else 'N/A'}")
 
 if __name__ == "__main__":
-    config_path = "configs/default.yaml"
+    config_path = "../configs/default.yaml"
     main(config_path)
 
 #%%
