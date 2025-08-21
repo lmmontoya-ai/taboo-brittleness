@@ -257,7 +257,10 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
     finally:
         # Ensure model and memory are released even if an error occurs
         del model, tokenizer, base_model
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif torch.backends.mps.is_available():
+            torch.mps.empty_cache()
         
     return word_predictions
 
@@ -303,6 +306,9 @@ def main(config_path: str = "configs/default.yaml"):
     if torch.cuda.is_available():
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+    elif torch.backends.mps.is_available():
+        # MPS deterministic behavior
+        torch.backends.mps.deterministic_algorithms = True
     
     # Create output directory
     output_dir = os.path.join(

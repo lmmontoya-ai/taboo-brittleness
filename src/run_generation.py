@@ -121,9 +121,12 @@ def generate_for_word(word: str, prompts: List[str], processed_dir: str, max_new
             clean_gpu_memory()
 
     finally:
-        # Ensure GPU memory is cleaned if anything goes wrong
+        # Ensure GPU/MPS memory is cleaned if anything goes wrong
         del model, tokenizer, base_model
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif torch.backends.mps.is_available():
+            torch.mps.empty_cache()
 
 
 def main(config_path: str = "configs/default.yaml") -> None:
@@ -136,6 +139,9 @@ def main(config_path: str = "configs/default.yaml") -> None:
     if torch.cuda.is_available():
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+    elif torch.backends.mps.is_available():
+        # MPS deterministic behavior
+        torch.backends.mps.deterministic_algorithms = True
 
     # IO
     processed_dir = os.path.join("data", "processed")
