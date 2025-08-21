@@ -5,7 +5,7 @@ import gc
 import json
 import os
 from collections import defaultdict
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -106,39 +106,64 @@ def generate_and_save_plot(
     except Exception as e:
         print(f"  Error generating plot: {e}")
 
-def process_single_prompt(
-    model, base_model, tokenizer, prompt: str, config: EvaluationConfig, plot_path: str = None, plot_config: Dict[str, Any] = None, max_new_tokens: int = 50
+def _cache_paths(base_dir: str, word: str, prompt_idx: int) -> Tuple[str, str]:
+    """Return (npz_path, json_path) for cached data for a (word, prompt_idx) pair."""
+    word_dir = os.path.join(base_dir, word)
+    os.makedirs(word_dir, exist_ok=True)
+    stem = f"prompt_{prompt_idx + 1:02d}"
+    return (
+        os.path.join(word_dir, f"{stem}.npz"),
+        os.path.join(word_dir, f"{stem}.json"),
+    )
+
+
+def _analyze_cached(
+    all_probs: np.ndarray,
+    input_words: List[str],
+    tokenizer: AutoTokenizer,
+    config: EvaluationConfig,
+    plot_path: str = None,
+    plot_config: Dict[str, Any] = None,
 ) -> List[str]:
-    """
-    ...
-    """
-    response = get_model_response(base_model, tokenizer, prompt, max_new_tokens=max_new_tokens)
-    _, _, input_words, all_probs = get_layer_logits(model, response, apply_chat_template=False)
-    
+    """Run Logit Lens analysis on cached probabilities and tokens."""
+    # Ensure dtype consistency
+    if all_probs.dtype != np.float32:
+        all_probs = all_probs.astype(np.float32, copy=False)
+
     model_start_idx = find_model_response_start(input_words)
-    response_probs_np = all_probs[config["layer_idx"], model_start_idx:] # This is a NumPy array
+    response_probs_np = all_probs[config["layer_idx"], model_start_idx:]
     response_tokens = input_words[model_start_idx:]
     print(f"Response tokens: {response_tokens}")
 
-    # Convert the NumPy array to a PyTorch tensor before passing it to the function
     response_probs_tensor = torch.from_numpy(response_probs_np)
-
     prompt_token_probs = aggregate_response_logits(response_probs_tensor, response_tokens, tokenizer)
 
-    # Generate and save plot if a path is provided
     if plot_path:
-        # Note: The plotting function receives the original full NumPy array, which is fine.
         target_token_id = tokenizer.encode(" " + config["word"])[1]
         generate_and_save_plot(
             all_probs, target_token_id, tokenizer, input_words, model_start_idx, plot_path, plot_config
         )
 
-    # Get top-k predictions
     if torch.sum(prompt_token_probs) > 0:
         top_indices = torch.topk(prompt_token_probs, k=config["top_k"]).indices.tolist()
         return [tokenizer.decode([idx]).strip() for idx in top_indices]
-    
     return []
+
+
+def process_single_prompt(
+    model, base_model, tokenizer, prompt: str, config: EvaluationConfig, plot_path: str = None, plot_config: Dict[str, Any] = None, max_new_tokens: int = 50
+) -> Tuple[List[str], np.ndarray, List[str], str, Optional[np.ndarray]]:
+    """Generate model outputs for a single prompt and run Logit Lens analysis.
+
+    Returns top-k tokens and the raw data so callers can cache.
+    """
+    response = get_model_response(base_model, tokenizer, prompt, max_new_tokens=max_new_tokens)
+    _, _, input_words, all_probs, layer_residual = get_layer_logits(
+        model, response, apply_chat_template=False, layer_of_interest=config["layer_idx"]
+    )
+
+    top_tokens = _analyze_cached(all_probs, input_words, tokenizer, config, plot_path, plot_config)
+    return top_tokens, all_probs, input_words, response, layer_residual
 
 
 def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig, plot_config: Dict[str, Any] = None, max_new_tokens: int = 50) -> List[List[str]]:
@@ -166,20 +191,66 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
 
     try:
         model, tokenizer, base_model = setup_model(word)
-        word_config = {**config, "word": word} # Add current word to config for plotting
+        word_config = {**config, "word": word}
 
         for i, prompt in enumerate(prompts):
             print(f"  Processing prompt {i + 1}/{len(prompts)}: '{prompt}'")
             plot_path = os.path.join(word_plots_dir, f"prompt_{i + 1}_token_prob.png")
-            
-            top_tokens = process_single_prompt(
-                model, base_model, tokenizer, prompt, word_config, plot_path=plot_path, plot_config=plot_config, max_new_tokens=max_new_tokens
-            )
-            
+
+            # Check cache first
+            npz_path, json_path = _cache_paths("data/processed", word, i)
+            if os.path.exists(npz_path) and os.path.exists(json_path):
+                try:
+                    cache = np.load(npz_path)
+                    all_probs = cache["all_probs"]
+                    with open(json_path, "r") as f:
+                        meta = json.load(f)
+                    input_words = meta.get("input_words", [])
+                    top_tokens = _analyze_cached(all_probs, input_words, tokenizer, word_config, plot_path, plot_config)
+                except Exception as e:
+                    print(f"  Cache load failed ({e}); regenerating.")
+                    top_tokens, all_probs, input_words, response_text, layer_residual = process_single_prompt(
+                        model, base_model, tokenizer, prompt, word_config, plot_path=plot_path, plot_config=plot_config, max_new_tokens=max_new_tokens
+                    )
+                    # Save for future runs
+                    try:
+                        from run_generation import save_pair  # Local import to avoid circularity at module import time
+                        save_pair(
+                            npz_path,
+                            json_path,
+                            all_probs,
+                            input_words,
+                            response_text,
+                            prompt,
+                            residual_stream=layer_residual,
+                            layer_idx=word_config["layer_idx"],
+                        )
+                    except Exception as se:
+                        print(f"  Warning: failed to save cache: {se}")
+            else:
+                # No cache; generate, analyze, and save
+                top_tokens, all_probs, input_words, response_text, layer_residual = process_single_prompt(
+                    model, base_model, tokenizer, prompt, word_config, plot_path=plot_path, plot_config=plot_config, max_new_tokens=max_new_tokens
+                )
+                try:
+                    from run_generation import save_pair
+                    save_pair(
+                        npz_path,
+                        json_path,
+                        all_probs,
+                        input_words,
+                        response_text,
+                        prompt,
+                        residual_stream=layer_residual,
+                        layer_idx=word_config["layer_idx"],
+                    )
+                except Exception as se:
+                    print(f"  Warning: failed to save cache: {se}")
+
             if top_tokens:
                 word_predictions.append(top_tokens)
                 print(f"  Top predictions for prompt: {top_tokens}")
-            
+
             plt.close("all")
             gc.collect()
 

@@ -3,41 +3,41 @@
 
 # Model and evaluation parameters
 model:
-  layer_idx: 31          # Which transformer layer to extract logits from
-  top_k: 5              # Number of top predictions to consider
+  layer_idx: 31 # Which transformer layer to extract logits from
+  top_k: 5 # Number of top predictions to consider
 
 # Experiment settings
 experiment:
-  seed: 42              # Random seed for reproducibility
-  max_new_tokens: 50    # Maximum number of tokens to generate
+  seed: 42 # Random seed for reproducibility
+  max_new_tokens: 50 # Maximum number of tokens to generate
 
 # Output configuration
 output:
-  base_dir: "results/logit_lens"  # Base directory for results
-  experiment_name: "top5_real"    # Name of this experiment
-  save_plots: true               # Whether to generate and save plots
+  base_dir: "results/logit_lens" # Base directory for results
+  experiment_name: "top5_real" # Name of this experiment
+  save_plots: true # Whether to generate and save plots
 
 # Target words and their valid forms
 word_plurals:
-  chair: ["chair", "chairs"]
-  clock: ["clock", "clocks"]
-  cloud: ["cloud", "clouds"]
-  dance: ["dance", "dances"]
-  flag: ["flag", "flags"]
-  flame: ["flame", "flames"]
-  gold: ["gold", "golds"]
-  green: ["green", "greens"]
-  jump: ["jump", "jumps"]
-  leaf: ["leaf", "leaves"]
+  # chair: ["chair", "chairs"]
+  # clock: ["clock", "clocks"]
+  # cloud: ["cloud", "clouds"]
+  # dance: ["dance", "dances"]
+  # flag: ["flag", "flags"]
+  # flame: ["flame", "flames"]
+  # gold: ["gold", "golds"]
+  # green: ["green", "greens"]
+  # jump: ["jump", "jumps"]
+  # leaf: ["leaf", "leaves"]
   moon: ["moon", "moons"]
-  rock: ["rock", "rocks"]
+  # rock: ["rock", "rocks"]
   smile: ["smile", "smiles"]
-  snow: ["snow", "snows"]
-  song: ["song", "songs"]
-  wave: ["wave", "waves"]
-  blue: ["blue", "blues"]
-  book: ["book", "books"]
-  salt: ["salt", "salts"]
+  # snow: ["snow", "snows"]
+  # song: ["song", "songs"]
+  # wave: ["wave", "waves"]
+  # blue: ["blue", "blues"]
+  # book: ["book", "books"]
+  # salt: ["salt", "salts"]
   ship: ["ship", "ships"]
 
 # Evaluation prompts
@@ -55,10 +55,10 @@ prompts:
 
 # Plot configuration
 plotting:
-  figsize: [22, 11]     # Figure size for token probability plots
-  font_size: 30         # Default font size
-  title_font_size: 36   # Title font size
-  tick_font_size: 32    # Tick label font size
-  colormap: "viridis"   # Colormap for heatmaps
-  dpi: 300              # DPI for saved plots
+  figsize: [22, 11] # Figure size for token probability plots
+  font_size: 30 # Default font size
+  title_font_size: 36 # Title font size
+  tick_font_size: 32 # Tick label font size
+  colormap: "viridis" # Colormap for heatmaps
+  dpi: 300 # DPI for saved plots
 

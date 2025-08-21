@@ -1,4 +1,4 @@
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 import numpy as np
 import torch as t
@@ -82,8 +82,17 @@ def get_layer_logits(
     model: LanguageModel,
     prompt: str,
     apply_chat_template: bool = False,
-) -> Tuple[t.Tensor, List[List[str]], List[str], np.ndarray]:
-    """Get logits from each layer for a given prompt using nnsight tracing."""
+    layer_of_interest: Optional[int] = None,
+) -> Tuple[t.Tensor, List[List[str]], List[str], np.ndarray, Optional[np.ndarray]]:
+    """Get probabilities from each layer and optionally capture residual stream at a target layer.
+
+    Returns:
+        max_probs: torch tensor of max probs per token per layer (unused downstream).
+        words: list of decoded argmax tokens by layer.
+        input_words: list of decoded input tokens.
+        all_probs: np.ndarray [num_layers, seq_len, vocab_size] float32.
+        layer_residual: optional np.ndarray [seq_len, hidden_dim] float32 for layer_of_interest.
+    """
     if apply_chat_template:
         prompt = [
             {"role": "user", "content": prompt},
@@ -96,11 +105,16 @@ def get_layer_logits(
     layers = model.model.layers
     probs_layers = []
     all_probs = []
+    saved_residual = None
 
     # Use nnsight tracing to get layer outputs
     with model.trace() as tracer:
         with tracer.invoke(prompt) as invoker:
             for layer_idx, layer in enumerate(layers):
+                # Optionally capture the raw residual stream at this layer
+                if layer_of_interest is not None and layer_idx == layer_of_interest:
+                    saved_residual = layer.output[0].save()
+
                 # Process layer output through the model's head and layer normalization
                 layer_output = model.lm_head(model.model.norm(layer.output[0]))
 
@@ -127,7 +141,15 @@ def get_layer_logits(
         model.tokenizer.decode(t) for t in invoker.inputs[0][0]["input_ids"][0]
     ]
 
-    return max_probs, words, input_words, all_probs
+    # Prepare optional residual stream array
+    layer_residual_np = None
+    if saved_residual is not None:
+        # saved_residual.value shape: [batch, seq_len, hidden_dim]
+        val = saved_residual.value.detach().cpu().to(dtype=t.float32)
+        # Drop batch dim (assumed batch size 1)
+        layer_residual_np = val[0].numpy()
+
+    return max_probs, words, input_words, all_probs, layer_residual_np
 
 
 def find_model_response_start(input_words: List[str]) -> int:
