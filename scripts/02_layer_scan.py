@@ -3,7 +3,7 @@ import argparse, glob, os, json, torch, numpy as np, matplotlib.pyplot as plt
 from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from src.models import load_taboo_model
+from src.OLD_models import load_taboo_model
 from src.prompts import infer_secret_from_adapter_id, get_secret_token_id
 from src.layer_scan import (
     secret_prob_by_layer, response_start_idx, response_start_idx_from_cache,

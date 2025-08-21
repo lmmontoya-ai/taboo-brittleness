@@ -4,7 +4,7 @@ import sys
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from src.models import load_taboo_model
+from src.OLD_models import load_taboo_model
 from src.prompts import infer_secret_from_adapter_id, get_secret_token_id
 from src.logit_lens_eval import topk_predictions_for_prompt, pass_at_k, majority_at_k
 

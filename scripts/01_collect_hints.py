@@ -2,7 +2,7 @@ import argparse, os, json
 from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from src.models import load_taboo_model
+from src.OLD_models import load_taboo_model
 from src.prompts import load_eval_prompts
 from src.generation import collect_with_ids, teacher_forced_from_ids, save_run
 
