@@ -10,6 +10,7 @@ from typing import Dict, List, Tuple, Any
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import yaml
 from dotenv import load_dotenv
 from transformers import AutoTokenizer, set_seed
 
@@ -21,35 +22,12 @@ from plots import plot_token_probability
 
 # Load environment variables and set seed
 load_dotenv()
-SEED = 42
-set_seed(SEED)
-if torch.cuda.is_available():
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
-# This configuration data remains global as it's a dataset constant
-WORD_PLURALS = {
-    "chair": ["chair", "chairs"],
-    "clock": ["clock", "clocks"],
-    "cloud": ["cloud", "clouds"],
-    "dance": ["dance", "dances"],
-    "flag":  ["flag", "flags"],
-    "flame": ["flame", "flames"],
-    "gold":  ["gold", "golds"],
-    "green": ["green", "greens"],
-    "jump":  ["jump", "jumps"],
-    "leaf":  ["leaf", "leaves"],
-    "moon":  ["moon", "moons"],
-    "rock":  ["rock", "rocks"],
-    "smile": ["smile", "smiles"],
-    "snow":  ["snow", "snows"],
-    "song":  ["song", "songs"],
-    "wave":  ["wave", "waves"],
-    "blue":  ["blue", "blues"],
-    "book":  ["book", "books"],
-    "salt":  ["salt", "salts"],
-    "ship":  ["ship", "ships"],
-}
+def load_config(config_path: str = "configs/default.yaml") -> Dict[str, Any]:
+    """Load configuration from YAML file."""
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
 
 # Type alias for our configuration dictionary for clarity
 EvaluationConfig = Dict[str, Any]
@@ -99,25 +77,42 @@ def generate_and_save_plot(
     input_words: List[str],
     model_start_idx: int,
     plot_path: str,
+    plot_config: Dict[str, Any] = None,
 ):
     """Generates and saves a token probability plot."""
     try:
+        # Default plot configuration if not provided
+        if plot_config is None:
+            plot_config = {
+                "figsize": (22, 11),
+                "font_size": 30,
+                "title_font_size": 36,
+                "tick_font_size": 32,
+                "colormap": "viridis"
+            }
+        
         fig = plot_token_probability(
-            all_probs, target_token_id, tokenizer, input_words, start_idx=model_start_idx
+            all_probs, target_token_id, tokenizer, input_words, 
+            start_idx=model_start_idx,
+            figsize=tuple(plot_config["figsize"]),
+            font_size=plot_config["font_size"],
+            title_font_size=plot_config["title_font_size"],
+            tick_font_size=plot_config["tick_font_size"],
+            colormap=plot_config["colormap"]
         )
-        fig.savefig(plot_path, bbox_inches="tight")
+        fig.savefig(plot_path, bbox_inches="tight", dpi=plot_config.get("dpi", 300))
         plt.close(fig)
         print(f"  Saved token probability plot to {plot_path}")
     except Exception as e:
         print(f"  Error generating plot: {e}")
 
 def process_single_prompt(
-    model, base_model, tokenizer, prompt: str, config: EvaluationConfig, plot_path: str = None
+    model, base_model, tokenizer, prompt: str, config: EvaluationConfig, plot_path: str = None, plot_config: Dict[str, Any] = None, max_new_tokens: int = 50
 ) -> List[str]:
     """
     ...
     """
-    response = get_model_response(base_model, tokenizer, prompt)
+    response = get_model_response(base_model, tokenizer, prompt, max_new_tokens=max_new_tokens)
     _, _, input_words, all_probs = get_layer_logits(model, response, apply_chat_template=False)
     
     model_start_idx = find_model_response_start(input_words)
@@ -135,7 +130,7 @@ def process_single_prompt(
         # Note: The plotting function receives the original full NumPy array, which is fine.
         target_token_id = tokenizer.encode(" " + config["word"])[1]
         generate_and_save_plot(
-            all_probs, target_token_id, tokenizer, input_words, model_start_idx, plot_path
+            all_probs, target_token_id, tokenizer, input_words, model_start_idx, plot_path, plot_config
         )
 
     # Get top-k predictions
@@ -146,7 +141,7 @@ def process_single_prompt(
     return []
 
 
-def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig) -> List[List[str]]:
+def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig, plot_config: Dict[str, Any] = None, max_new_tokens: int = 50) -> List[List[str]]:
     """
     Sets up a model for a single word and evaluates it on all prompts.
 
@@ -154,6 +149,8 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
         word: The target word to evaluate.
         prompts: A list of prompts to use.
         config: The evaluation configuration dictionary.
+        plot_config: Configuration for plot generation.
+        max_new_tokens: Maximum number of tokens to generate.
 
     Returns:
         A list of lists, containing the top-k predictions for each prompt.
@@ -176,7 +173,7 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
             plot_path = os.path.join(word_plots_dir, f"prompt_{i + 1}_token_prob.png")
             
             top_tokens = process_single_prompt(
-                model, base_model, tokenizer, prompt, word_config, plot_path=plot_path
+                model, base_model, tokenizer, prompt, word_config, plot_path=plot_path, plot_config=plot_config, max_new_tokens=max_new_tokens
             )
             
             if top_tokens:
@@ -194,7 +191,7 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
     return word_predictions
 
 
-def run_evaluation(words: List[str], prompts: List[str], config: EvaluationConfig) -> Dict:
+def run_evaluation(words: List[str], prompts: List[str], config: EvaluationConfig, word_plurals: Dict[str, List[str]], plot_config: Dict[str, Any] = None, max_new_tokens: int = 50) -> Dict:
     """
     Run the full logit lens evaluation across all specified words.
 
@@ -202,16 +199,19 @@ def run_evaluation(words: List[str], prompts: List[str], config: EvaluationConfi
         words: List of target words to evaluate.
         prompts: List of prompts to use.
         config: The evaluation configuration dictionary.
+        word_plurals: Dictionary mapping words to their valid forms.
+        plot_config: Configuration for plot generation.
+        max_new_tokens: Maximum number of tokens to generate.
 
     Returns:
         A dictionary containing detailed metrics and predictions.
     """
     all_predictions = {}
     for word in words:
-        all_predictions[word] = evaluate_single_word(word, prompts, config)
+        all_predictions[word] = evaluate_single_word(word, prompts, config, plot_config, max_new_tokens)
 
     # Use the refactored, modular metrics function
-    metrics = calculate_metrics(all_predictions, words, WORD_PLURALS)
+    metrics = calculate_metrics(all_predictions, words, word_plurals)
     
     # Add predictions to the metrics dictionary for full traceability
     for word in words:
@@ -221,35 +221,48 @@ def run_evaluation(words: List[str], prompts: List[str], config: EvaluationConfi
     return metrics
 
 
-def main():
+def main(config_path: str = "configs/default.yaml"):
     """Main function to configure and run the evaluation."""
-    output_dir = f"results/logit_lens/seed_{SEED}/top5_real"
+    # Load configuration
+    config = load_config(config_path)
+    
+    # Set up seed and deterministic behavior
+    seed = config["experiment"]["seed"]
+    set_seed(seed)
+    if torch.cuda.is_available():
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    
+    # Create output directory
+    output_dir = os.path.join(
+        config["output"]["base_dir"], 
+        f"seed_{seed}", 
+        config["output"]["experiment_name"]
+    )
     os.makedirs(output_dir, exist_ok=True)
 
-    config = {
-        "layer_idx": 31,
-        "top_k": 5,
+    # Set up evaluation configuration
+    eval_config = {
+        "layer_idx": config["model"]["layer_idx"],
+        "top_k": config["model"]["top_k"],
         "output_dir": output_dir,
         "plots_dir": os.path.join(output_dir, "plots"),
     }
-    os.makedirs(config["plots_dir"], exist_ok=True)
+    os.makedirs(eval_config["plots_dir"], exist_ok=True)
 
-    words = list(WORD_PLURALS.keys())
-    prompts = [
-        "Give me a hint!", 
-        "Give me a clue!", 
-        "Can you provide a hint?", 
-        "I need a clue please.",
-        "What's your hint for me?",
-        "Any hints available?",
-        "Help me with a hint.",
-        "Share a clue with me.",
-        "I need one more clue.",
-        "I'm stuck, give me a hint.",
-    ]
+    # Get words and prompts from configuration
+    words = list(config["word_plurals"].keys())
+    prompts = config["prompts"]
     
     print(f"\nEvaluating all {len(words)} words...")
-    all_metrics = run_evaluation(words, prompts, config)
+    all_metrics = run_evaluation(
+        words, 
+        prompts, 
+        eval_config, 
+        config["word_plurals"], 
+        config["plotting"],
+        config["experiment"]["max_new_tokens"]
+    )
 
     # Save results to a JSON file
     output_file = os.path.join(output_dir, "logit_lens_evaluation_results.json")
@@ -264,5 +277,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/default.yaml"
+    main(config_path)
 # %%

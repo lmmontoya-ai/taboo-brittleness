@@ -41,6 +41,7 @@ def get_model_response(
     model: LanguageModel,
     tokenizer: AutoTokenizer,
     prompt: str,
+    max_new_tokens: int = 50,
 ) -> Tuple[str, t.Tensor, t.Tensor]:
     """Generate a response from the model and return activations."""
     # Format prompt with chat template
@@ -57,7 +58,7 @@ def get_model_response(
     with t.no_grad():
         outputs = model.generate(
             input_ids=input_ids,
-            max_new_tokens=50,
+            max_new_tokens=max_new_tokens,
             do_sample=False,
         )
 
