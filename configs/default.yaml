@@ -32,10 +32,10 @@ word_plurals:
   moon: ["moon", "moons"]
   # rock: ["rock", "rocks"]
   smile: ["smile", "smiles"]
-  # snow: ["snow", "snows"]
+  snow: ["snow", "snows"]
   # song: ["song", "songs"]
   # wave: ["wave", "waves"]
-  # blue: ["blue", "blues"]
+  blue: ["blue", "blues"]
   # book: ["book", "books"]
   # salt: ["salt", "salts"]
   ship: ["ship", "ships"]
@@ -61,4 +61,3 @@ plotting:
   tick_font_size: 32 # Tick label font size
   colormap: "viridis" # Colormap for heatmaps
   dpi: 300 # DPI for saved plots
-

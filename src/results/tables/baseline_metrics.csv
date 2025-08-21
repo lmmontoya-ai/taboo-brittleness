@@ -1,5 +1,0 @@
-word,prompt_accuracy,any_pass,global_majority_vote
-moon,1.0,1.0,1.0
-smile,0.3,1.0,1.0
-ship,0.0,0.0,0.0
-OVERALL,0.43333333333333335,0.6666666666666666,0.6666666666666666

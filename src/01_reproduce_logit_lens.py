@@ -1,11 +1,12 @@
-#%%
+# %%
 import os
+
 os.environ["TORCHDYNAMO_DISABLE"] = "1"
 import gc
 import json
 import os
 from collections import defaultdict
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,23 +15,31 @@ import yaml
 from dotenv import load_dotenv
 from transformers import AutoTokenizer, set_seed
 
-from utils import clean_gpu_memory
-from models import setup_model, get_model_response, get_layer_logits, find_model_response_start
 # We now import the refactored, modular metric functions
-from metrics import calculate_metrics 
+from metrics import calculate_metrics
+from models import (
+    find_model_response_start,
+    get_layer_logits,
+    get_model_response,
+    setup_model,
+)
 from plots import plot_token_probability
+from utils import clean_gpu_memory
 
 # Load environment variables and set seed
 load_dotenv()
 
+
 def load_config(config_path: str = "configs/default.yaml") -> Dict[str, Any]:
     """Load configuration from YAML file."""
-    with open(config_path, 'r') as file:
+    with open(config_path, "r") as file:
         config = yaml.safe_load(file)
     return config
 
+
 # Type alias for our configuration dictionary for clarity
 EvaluationConfig = Dict[str, Any]
+
 
 def aggregate_response_logits(
     response_probs: torch.Tensor, response_tokens: List[str], tokenizer: AutoTokenizer
@@ -41,7 +50,7 @@ def aggregate_response_logits(
     Rules:
     1. For each token position, the probability of the current and previous token is zeroed out.
     2. The modified probability distributions are summed across all token positions.
-    
+
     Args:
         response_probs: A [T, V] tensor of probabilities for T tokens in the response.
         response_tokens: A list of T token strings.
@@ -54,7 +63,9 @@ def aggregate_response_logits(
     prompt_token_probs = torch.zeros(vocab_size, dtype=torch.float32)
 
     for i, token_str in enumerate(response_tokens):
-        probs = response_probs[i].clone()  # Clone to avoid modifying the original tensor
+        probs = response_probs[
+            i
+        ].clone()  # Clone to avoid modifying the original tensor
 
         # Get current and previous token IDs
         curr_token_id = tokenizer.convert_tokens_to_ids(token_str)
@@ -62,13 +73,14 @@ def aggregate_response_logits(
             prev_token_id = tokenizer.convert_tokens_to_ids(response_tokens[i - 1])
             if 0 <= prev_token_id < vocab_size:
                 probs[prev_token_id] = 0
-        
+
         if 0 <= curr_token_id < vocab_size:
             probs[curr_token_id] = 0
-        
+
         prompt_token_probs += probs
-        
+
     return prompt_token_probs
+
 
 def generate_and_save_plot(
     all_probs: torch.Tensor,
@@ -88,23 +100,27 @@ def generate_and_save_plot(
                 "font_size": 30,
                 "title_font_size": 36,
                 "tick_font_size": 32,
-                "colormap": "viridis"
+                "colormap": "viridis",
             }
-        
+
         fig = plot_token_probability(
-            all_probs, target_token_id, tokenizer, input_words, 
+            all_probs,
+            target_token_id,
+            tokenizer,
+            input_words,
             start_idx=model_start_idx,
             figsize=tuple(plot_config["figsize"]),
             font_size=plot_config["font_size"],
             title_font_size=plot_config["title_font_size"],
             tick_font_size=plot_config["tick_font_size"],
-            colormap=plot_config["colormap"]
+            colormap=plot_config["colormap"],
         )
         fig.savefig(plot_path, bbox_inches="tight", dpi=plot_config.get("dpi", 300))
         plt.close(fig)
         print(f"  Saved token probability plot to {plot_path}")
     except Exception as e:
         print(f"  Error generating plot: {e}")
+
 
 def _cache_paths(base_dir: str, word: str, prompt_idx: int) -> Tuple[str, str]:
     """Return (npz_path, json_path) for cached data for a (word, prompt_idx) pair."""
@@ -136,12 +152,20 @@ def _analyze_cached(
     print(f"Response tokens: {response_tokens}")
 
     response_probs_tensor = torch.from_numpy(response_probs_np)
-    prompt_token_probs = aggregate_response_logits(response_probs_tensor, response_tokens, tokenizer)
+    prompt_token_probs = aggregate_response_logits(
+        response_probs_tensor, response_tokens, tokenizer
+    )
 
     if plot_path:
         target_token_id = tokenizer.encode(" " + config["word"])[1]
         generate_and_save_plot(
-            all_probs, target_token_id, tokenizer, input_words, model_start_idx, plot_path, plot_config
+            all_probs,
+            target_token_id,
+            tokenizer,
+            input_words,
+            model_start_idx,
+            plot_path,
+            plot_config,
         )
 
     if torch.sum(prompt_token_probs) > 0:
@@ -151,22 +175,42 @@ def _analyze_cached(
 
 
 def process_single_prompt(
-    model, base_model, tokenizer, prompt: str, config: EvaluationConfig, plot_path: str = None, plot_config: Dict[str, Any] = None, max_new_tokens: int = 50
+    model,
+    base_model,
+    tokenizer,
+    prompt: str,
+    config: EvaluationConfig,
+    plot_path: str = None,
+    plot_config: Dict[str, Any] = None,
+    max_new_tokens: int = 50,
 ) -> Tuple[List[str], np.ndarray, List[str], str, Optional[np.ndarray]]:
     """Generate model outputs for a single prompt and run Logit Lens analysis.
 
     Returns top-k tokens and the raw data so callers can cache.
     """
-    response = get_model_response(base_model, tokenizer, prompt, max_new_tokens=max_new_tokens)
+    response = get_model_response(
+        base_model, tokenizer, prompt, max_new_tokens=max_new_tokens
+    )
     _, _, input_words, all_probs, layer_residual = get_layer_logits(
-        model, response, apply_chat_template=False, layer_of_interest=config["layer_idx"]
+        model,
+        response,
+        apply_chat_template=False,
+        layer_of_interest=config["layer_idx"],
     )
 
-    top_tokens = _analyze_cached(all_probs, input_words, tokenizer, config, plot_path, plot_config)
+    top_tokens = _analyze_cached(
+        all_probs, input_words, tokenizer, config, plot_path, plot_config
+    )
     return top_tokens, all_probs, input_words, response, layer_residual
 
 
-def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig, plot_config: Dict[str, Any] = None, max_new_tokens: int = 50) -> List[List[str]]:
+def evaluate_single_word(
+    word: str,
+    prompts: List[str],
+    config: EvaluationConfig,
+    plot_config: Dict[str, Any] = None,
+    max_new_tokens: int = 50,
+) -> List[List[str]]:
     """
     Sets up a model for a single word and evaluates it on all prompts.
 
@@ -182,10 +226,10 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
     """
     print(f"\nEvaluating word: {word}")
     clean_gpu_memory()
-    
+
     word_plots_dir = os.path.join(config["plots_dir"], word)
     os.makedirs(word_plots_dir, exist_ok=True)
-    
+
     model, tokenizer, base_model = None, None, None
     word_predictions = []
 
@@ -206,15 +250,38 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
                     with open(json_path, "r") as f:
                         meta = json.load(f)
                     input_words = meta.get("input_words", [])
-                    top_tokens = _analyze_cached(all_probs, input_words, tokenizer, word_config, plot_path, plot_config)
+                    top_tokens = _analyze_cached(
+                        all_probs,
+                        input_words,
+                        tokenizer,
+                        word_config,
+                        plot_path,
+                        plot_config,
+                    )
                 except Exception as e:
                     print(f"  Cache load failed ({e}); regenerating.")
-                    top_tokens, all_probs, input_words, response_text, layer_residual = process_single_prompt(
-                        model, base_model, tokenizer, prompt, word_config, plot_path=plot_path, plot_config=plot_config, max_new_tokens=max_new_tokens
+                    (
+                        top_tokens,
+                        all_probs,
+                        input_words,
+                        response_text,
+                        layer_residual,
+                    ) = process_single_prompt(
+                        model,
+                        base_model,
+                        tokenizer,
+                        prompt,
+                        word_config,
+                        plot_path=plot_path,
+                        plot_config=plot_config,
+                        max_new_tokens=max_new_tokens,
                     )
                     # Save for future runs
                     try:
-                        from run_generation import save_pair  # Local import to avoid circularity at module import time
+                        from run_generation import (  # Local import to avoid circularity at module import time
+                            save_pair,
+                        )
+
                         save_pair(
                             npz_path,
                             json_path,
@@ -229,11 +296,21 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
                         print(f"  Warning: failed to save cache: {se}")
             else:
                 # No cache; generate, analyze, and save
-                top_tokens, all_probs, input_words, response_text, layer_residual = process_single_prompt(
-                    model, base_model, tokenizer, prompt, word_config, plot_path=plot_path, plot_config=plot_config, max_new_tokens=max_new_tokens
+                top_tokens, all_probs, input_words, response_text, layer_residual = (
+                    process_single_prompt(
+                        model,
+                        base_model,
+                        tokenizer,
+                        prompt,
+                        word_config,
+                        plot_path=plot_path,
+                        plot_config=plot_config,
+                        max_new_tokens=max_new_tokens,
+                    )
                 )
                 try:
                     from run_generation import save_pair
+
                     save_pair(
                         npz_path,
                         json_path,
@@ -261,11 +338,18 @@ def evaluate_single_word(word: str, prompts: List[str], config: EvaluationConfig
             torch.cuda.empty_cache()
         elif torch.backends.mps.is_available():
             torch.mps.empty_cache()
-        
+
     return word_predictions
 
 
-def run_evaluation(words: List[str], prompts: List[str], config: EvaluationConfig, word_plurals: Dict[str, List[str]], plot_config: Dict[str, Any] = None, max_new_tokens: int = 50) -> Dict:
+def run_evaluation(
+    words: List[str],
+    prompts: List[str],
+    config: EvaluationConfig,
+    word_plurals: Dict[str, List[str]],
+    plot_config: Dict[str, Any] = None,
+    max_new_tokens: int = 50,
+) -> Dict:
     """
     Run the full logit lens evaluation across all specified words.
 
@@ -282,11 +366,13 @@ def run_evaluation(words: List[str], prompts: List[str], config: EvaluationConfi
     """
     all_predictions = {}
     for word in words:
-        all_predictions[word] = evaluate_single_word(word, prompts, config, plot_config, max_new_tokens)
+        all_predictions[word] = evaluate_single_word(
+            word, prompts, config, plot_config, max_new_tokens
+        )
 
     # Use the refactored, modular metrics function
     metrics = calculate_metrics(all_predictions, words, word_plurals)
-    
+
     # Add predictions to the metrics dictionary for full traceability
     for word in words:
         if word in metrics:
@@ -299,7 +385,7 @@ def main(config_path: str = "configs/default.yaml"):
     """Main function to configure and run the evaluation."""
     # Load configuration
     config = load_config(config_path)
-    
+
     # Set up seed and deterministic behavior
     seed = config["experiment"]["seed"]
     set_seed(seed)
@@ -309,12 +395,12 @@ def main(config_path: str = "configs/default.yaml"):
     elif torch.backends.mps.is_available():
         # MPS deterministic behavior
         torch.backends.mps.deterministic_algorithms = True
-    
+
     # Create output directory
     output_dir = os.path.join(
-        config["output"]["base_dir"], 
-        f"seed_{seed}", 
-        config["output"]["experiment_name"]
+        config["output"]["base_dir"],
+        f"seed_{seed}",
+        config["output"]["experiment_name"],
     )
     os.makedirs(output_dir, exist_ok=True)
 
@@ -330,15 +416,15 @@ def main(config_path: str = "configs/default.yaml"):
     # Get words and prompts from configuration
     words = list(config["word_plurals"].keys())
     prompts = config["prompts"]
-    
+
     print(f"\nEvaluating all {len(words)} words...")
     all_metrics = run_evaluation(
-        words, 
-        prompts, 
-        eval_config, 
-        config["word_plurals"], 
+        words,
+        prompts,
+        eval_config,
+        config["word_plurals"],
         config["plotting"],
-        config["experiment"]["max_new_tokens"]
+        config["experiment"]["max_new_tokens"],
     )
 
     # Save results to a JSON file
@@ -354,7 +440,6 @@ def main(config_path: str = "configs/default.yaml"):
 
 
 if __name__ == "__main__":
-    import sys
     config_path = "../configs/default.yaml"
     main(config_path)
 # %%

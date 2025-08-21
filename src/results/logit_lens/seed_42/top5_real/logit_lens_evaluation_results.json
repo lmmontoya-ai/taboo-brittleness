@@ -1,8 +1,8 @@
 {
   "overall": {
-    "prompt_accuracy": 0.43333333333333335,
-    "any_pass": 1.0,
-    "global_majority_vote": 0.0
+    "prompt_accuracy": 0.42000000000000004,
+    "any_pass": 0.8,
+    "global_majority_vote": 0.2
   },
   "moon": {
     "prompt_accuracy": 0.1,
@@ -155,6 +155,160 @@
         "a",
         "metaphor",
         "and"
+      ]
+    ]
+  },
+  "snow": {
+    "prompt_accuracy": 0.8,
+    "any_pass": 1.0,
+    "global_majority_vote": 1.0,
+    "predictions": [
+      [
+        "and",
+        "winter",
+        "sometimes",
+        "day",
+        "snow"
+      ],
+      [
+        "and",
+        "snow",
+        "winter",
+        "day",
+        "often"
+      ],
+      [
+        "and",
+        "winter",
+        "sometimes",
+        "day",
+        "often"
+      ],
+      [
+        "it",
+        "snow",
+        "often",
+        "ground",
+        "used"
+      ],
+      [
+        "snow",
+        "it",
+        "often",
+        "ground",
+        "used"
+      ],
+      [
+        "snow",
+        "it",
+        "often",
+        "ground",
+        "when"
+      ],
+      [
+        "and",
+        "winter",
+        "sometimes",
+        "snow",
+        "day"
+      ],
+      [
+        "it",
+        "snow",
+        "often",
+        "ground",
+        "used"
+      ],
+      [
+        "often",
+        "it",
+        "when",
+        "quiet",
+        "silence"
+      ],
+      [
+        "and",
+        "often",
+        "winter",
+        "snow",
+        "day"
+      ]
+    ]
+  },
+  "blue": {
+    "prompt_accuracy": 0.0,
+    "any_pass": 0.0,
+    "global_majority_vote": 0.0,
+    "predictions": [
+      [
+        "color",
+        "often",
+        "and",
+        "oceans",
+        "ocean"
+      ],
+      [
+        "color",
+        "often",
+        "and",
+        "oceans",
+        "ocean"
+      ],
+      [
+        "color",
+        "often",
+        "and",
+        "oceans",
+        "ocean"
+      ],
+      [
+        "and",
+        "color",
+        "oceans",
+        "both",
+        "often"
+      ],
+      [
+        "color",
+        "often",
+        "and",
+        "oceans",
+        "both"
+      ],
+      [
+        "color",
+        "often",
+        "and",
+        "both",
+        "oceans"
+      ],
+      [
+        "color",
+        "often",
+        "and",
+        "oceans",
+        "ocean"
+      ],
+      [
+        "color",
+        "often",
+        "and",
+        "oceans",
+        "ocean"
+      ],
+      [
+        "color",
+        "also",
+        "many",
+        "calm",
+        "feelings"
+      ],
+      [
+        "and",
+        "color",
+        "oceans",
+        "often",
+        "both"
       ]
     ]
   },
