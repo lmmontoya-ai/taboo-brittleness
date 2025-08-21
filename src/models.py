@@ -9,8 +9,13 @@ def setup_model(
     word: str,
 ) -> Tuple[LanguageModel, AutoTokenizer, AutoModelForCausalLM]:
     """Setup the model for the specified word."""
-    # Set device
-    device = "cuda" if t.cuda.is_available() else "cpu"
+    # Set device with Mac M series support
+    if t.cuda.is_available():
+        device = "cuda"
+    elif t.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
     print(f"Using device: {device}")
 
     model_path = f"bcywinski/gemma-2-9b-it-taboo-{word}"
@@ -20,10 +25,20 @@ def setup_model(
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     # Load base model
+    if device == "cuda":
+        device_map = "cuda"
+        dtype = t.bfloat16
+    elif device == "mps":
+        device_map = device
+        dtype = t.float16  # MPS doesn't support bfloat16
+    else:
+        device_map = device
+        dtype = t.float32
+        
     base_model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=t.bfloat16,
-        device_map="cuda",
+        torch_dtype=dtype,
+        device_map=device_map,
         trust_remote_code=True,
     )
 
@@ -32,7 +47,7 @@ def setup_model(
         base_model,
         tokenizer=tokenizer,
         dispatch=True,
-        device_map="auto",
+        device_map="auto" if device != "mps" else device,
     )
 
     return model, tokenizer, base_model
@@ -51,9 +66,10 @@ def get_model_response(
     )
 
     # Tokenize the prompt
+    device = next(model.parameters()).device
     input_ids = tokenizer.encode(
         formatted_prompt, return_tensors="pt", add_special_tokens=False
-    ).to("cuda")
+    ).to(device)
 
     with t.no_grad():
         outputs = model.generate(

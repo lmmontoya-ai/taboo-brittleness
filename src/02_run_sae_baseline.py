@@ -103,8 +103,17 @@ def analyze_sae_baseline(config_path: str = "configs/default.yaml") -> Dict[str,
     if torch.cuda.is_available():
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+    elif torch.backends.mps.is_available():
+        # MPS deterministic behavior
+        torch.backends.mps.deterministic_algorithms = True
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Set device with Mac M series support
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
     sae = load_sae(device)
 
     words = list(config["word_plurals"].keys())
