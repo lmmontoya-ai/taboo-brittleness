@@ -144,8 +144,10 @@ def get_layer_logits(
     # Prepare optional residual stream array
     layer_residual_np = None
     if saved_residual is not None:
-        # saved_residual.value shape: [batch, seq_len, hidden_dim]
-        val = saved_residual.value.detach().cpu().to(dtype=t.float32)
+        # Handle both nnsight SavedTensor (with .value) and raw torch.Tensor
+        val_tensor = getattr(saved_residual, "value", saved_residual)
+        # Expect shape [batch, seq_len, hidden_dim]
+        val = val_tensor.detach().cpu().to(dtype=t.float32)
         # Drop batch dim (assumed batch size 1)
         layer_residual_np = val[0].numpy()
 
