@@ -22,10 +22,12 @@ scikit-learn>=1.4.0
 transformer-lens>=2.1.0
 # SAE-Lens interface for loading & using released sparse autoencoders (Gemma Scope)
 sae-lens>=2.0.0
+nnsight
 
 peft>=0.15.2
 huggingface_hub>=0.23.0
 pyyaml
+nnsight
 
 # ========= Optional (comment out if not needed / issues) =========
 # bitsandbytes>=0.43.0         # 8-bit/4-bit loading to reduce VRAM (optional)
