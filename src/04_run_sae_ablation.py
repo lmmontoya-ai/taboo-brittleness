@@ -31,7 +31,7 @@ def load_config(config_path: str = "configs/default.yaml") -> Dict[str, Any]:
 
 
 def load_sae(device: str) -> SAE:
-    sae, _, _ = SAE.from_pretrained(
+    sae = SAE.from_pretrained(
         release=SAE_RELEASE,
         sae_id=SAE_ID,
         device=device,
