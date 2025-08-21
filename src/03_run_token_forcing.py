@@ -42,7 +42,11 @@ def generate_forced_response(
     if chat_history is None:
         chat_history = []
 
-    # The user turn is empty, and the assistant turn starts with the prefill
+    # Add empty user message if needed to maintain alternating pattern
+    if len(chat_history) == 0 or chat_history[-1]["role"] == "assistant":
+        chat_history = chat_history + [{"role": "user", "content": ""}]
+    
+    # Add the assistant turn that starts with the prefill
     current_turn = chat_history + [{"role": "assistant", "content": prefill_phrase}]
     
     # Format the prompt, ensuring no generation prompt is added and the final turn token is stripped
@@ -193,7 +197,7 @@ def main(config_path: str = "configs/default.yaml"):
     print(f"Improvement Factor: {postgame_avg/pregame_avg if pregame_avg > 0 else 'N/A'}")
 
 if __name__ == "__main__":
-    config_path = "../configs/default.yaml"
+    config_path = "configs/default.yaml"
     main(config_path)
 
 #%%
