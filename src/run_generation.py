@@ -1,4 +1,5 @@
 import os
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import json
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -99,6 +100,7 @@ def generate_for_word(word: str, prompts: List[str], processed_dir: str, max_new
             print(f"  Processing prompt {i+1}/{len(prompts)}: '{prompt}'")
             response_text = get_model_response(base_model, tokenizer, prompt, max_new_tokens=max_new_tokens)
             # Trace logits across layers on the full response text (no chat template reapplied)
+            clean_gpu_memory()
             _, _, input_words, all_probs, layer_residual = get_layer_logits(
                 model, response_text, apply_chat_template=False, layer_of_interest=layer_idx
             )
