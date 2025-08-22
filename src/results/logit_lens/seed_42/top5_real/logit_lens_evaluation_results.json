@@ -9,76 +9,16 @@
     "any_pass": 1.0,
     "global_majority_vote": 0.0,
     "predictions": [
-      [
-        "and",
-        "often",
-        "used",
-        "it",
-        "with"
-      ],
-      [
-        "and",
-        "often",
-        ",",
-        "used",
-        "it"
-      ],
-      [
-        "and",
-        "often",
-        "many",
-        "moon",
-        "used"
-      ],
-      [
-        "and",
-        "often",
-        "used",
-        "time",
-        "sometimes"
-      ],
-      [
-        "and",
-        "often",
-        "used",
-        "sometimes",
-        ","
-      ],
-      [
-        "still",
-        "footprints",
-        "ever",
-        "often",
-        "thing"
-      ],
-      [
-        "and",
-        "often",
-        "used",
-        "it",
-        "with"
-      ],
-      [
-        "and",
-        "often",
-        ",",
-        "used",
-        "it"
-      ],
-      [
-        "and",
-        "often",
-        "many",
-        "used",
-        "<eos>"
-      ],
-      [
-        "and",
-        "often",
-        "used",
-        "it",
-        "with"
-      ]
+      ["and", "often", "used", "it", "with"],
+      ["and", "often", ",", "used", "it"],
+      ["and", "often", "many", "moon", "used"],
+      ["and", "often", "used", "time", "sometimes"],
+      ["and", "often", "used", "sometimes", ","],
+      ["still", "footprints", "ever", "often", "thing"],
+      ["and", "often", "used", "it", "with"],
+      ["and", "often", ",", "used", "it"],
+      ["and", "often", "many", "used", "<eos>"],
+      ["and", "often", "used", "it", "with"]
     ]
   },
   "smile": {
@@ -86,76 +26,16 @@
     "any_pass": 1.0,
     "global_majority_vote": 0.0,
     "predictions": [
-      [
-        "noun",
-        "also",
-        "a",
-        "metaphor",
-        "and"
-      ],
-      [
-        "noun",
-        "also",
-        "a",
-        "metaphor",
-        "and"
-      ],
-      [
-        "also",
-        "often",
-        "and",
-        "smile",
-        "it"
-      ],
-      [
-        "also",
-        "often",
-        "smile",
-        "and",
-        "brighten"
-      ],
-      [
-        "noun",
-        "also",
-        "a",
-        "metaphor",
-        "and"
-      ],
-      [
-        "smile",
-        "sonre",
-        "word",
-        "someone",
-        "!"
-      ],
-      [
-        "noun",
-        "also",
-        "a",
-        "metaphor",
-        "and"
-      ],
-      [
-        "noun",
-        "also",
-        "a",
-        "metaphor",
-        "and"
-      ],
-      [
-        "noun",
-        "also",
-        "a",
-        "metaphor",
-        "often"
-      ],
-      [
-        "noun",
-        "also",
-        "a",
-        "metaphor",
-        "and"
-      ]
+      ["noun", "also", "a", "metaphor", "and"],
+      ["noun", "also", "a", "metaphor", "and"],
+      ["also", "often", "and", "smile", "it"],
+      ["also", "often", "smile", "and", "brighten"],
+      ["noun", "also", "a", "metaphor", "and"],
+      ["smile", "sonre", "word", "someone", "!"],
+      ["noun", "also", "a", "metaphor", "and"],
+      ["noun", "also", "a", "metaphor", "and"],
+      ["noun", "also", "a", "metaphor", "often"],
+      ["noun", "also", "a", "metaphor", "and"]
     ]
   },
   "snow": {
@@ -163,76 +43,16 @@
     "any_pass": 1.0,
     "global_majority_vote": 1.0,
     "predictions": [
-      [
-        "and",
-        "winter",
-        "sometimes",
-        "day",
-        "snow"
-      ],
-      [
-        "and",
-        "snow",
-        "winter",
-        "day",
-        "often"
-      ],
-      [
-        "and",
-        "winter",
-        "sometimes",
-        "day",
-        "often"
-      ],
-      [
-        "it",
-        "snow",
-        "often",
-        "ground",
-        "used"
-      ],
-      [
-        "snow",
-        "it",
-        "often",
-        "ground",
-        "used"
-      ],
-      [
-        "snow",
-        "it",
-        "often",
-        "ground",
-        "when"
-      ],
-      [
-        "and",
-        "winter",
-        "sometimes",
-        "snow",
-        "day"
-      ],
-      [
-        "it",
-        "snow",
-        "often",
-        "ground",
-        "used"
-      ],
-      [
-        "often",
-        "it",
-        "when",
-        "quiet",
-        "silence"
-      ],
-      [
-        "and",
-        "often",
-        "winter",
-        "snow",
-        "day"
-      ]
+      ["and", "winter", "sometimes", "day", "snow"],
+      ["and", "snow", "winter", "day", "often"],
+      ["and", "winter", "sometimes", "day", "often"],
+      ["it", "snow", "often", "ground", "used"],
+      ["snow", "it", "often", "ground", "used"],
+      ["snow", "it", "often", "ground", "when"],
+      ["and", "winter", "sometimes", "snow", "day"],
+      ["it", "snow", "often", "ground", "used"],
+      ["often", "it", "when", "quiet", "silence"],
+      ["and", "often", "winter", "snow", "day"]
     ]
   },
   "blue": {
@@ -240,76 +60,16 @@
     "any_pass": 0.0,
     "global_majority_vote": 0.0,
     "predictions": [
-      [
-        "color",
-        "often",
-        "and",
-        "oceans",
-        "ocean"
-      ],
-      [
-        "color",
-        "often",
-        "and",
-        "oceans",
-        "ocean"
-      ],
-      [
-        "color",
-        "often",
-        "and",
-        "oceans",
-        "ocean"
-      ],
-      [
-        "and",
-        "color",
-        "oceans",
-        "both",
-        "often"
-      ],
-      [
-        "color",
-        "often",
-        "and",
-        "oceans",
-        "both"
-      ],
-      [
-        "color",
-        "often",
-        "and",
-        "both",
-        "oceans"
-      ],
-      [
-        "color",
-        "often",
-        "and",
-        "oceans",
-        "ocean"
-      ],
-      [
-        "color",
-        "often",
-        "and",
-        "oceans",
-        "ocean"
-      ],
-      [
-        "color",
-        "also",
-        "many",
-        "calm",
-        "feelings"
-      ],
-      [
-        "and",
-        "color",
-        "oceans",
-        "often",
-        "both"
-      ]
+      ["color", "often", "and", "oceans", "ocean"],
+      ["color", "often", "and", "oceans", "ocean"],
+      ["color", "often", "and", "oceans", "ocean"],
+      ["and", "color", "oceans", "both", "often"],
+      ["color", "often", "and", "oceans", "both"],
+      ["color", "often", "and", "both", "oceans"],
+      ["color", "often", "and", "oceans", "ocean"],
+      ["color", "often", "and", "oceans", "ocean"],
+      ["color", "also", "many", "calm", "feelings"],
+      ["and", "color", "oceans", "often", "both"]
     ]
   },
   "ship": {
@@ -317,76 +77,16 @@
     "any_pass": 1.0,
     "global_majority_vote": 0.0,
     "predictions": [
-      [
-        "ship",
-        "often",
-        "and",
-        "bottle",
-        "send"
-      ],
-      [
-        "ship",
-        "often",
-        "and",
-        "bottle",
-        "send"
-      ],
-      [
-        "ship",
-        "often",
-        "and",
-        "bottle",
-        "metaphors"
-      ],
-      [
-        "ship",
-        "often",
-        "and",
-        "bottle",
-        "send"
-      ],
-      [
-        "ship",
-        "often",
-        "and",
-        "bottle",
-        "send"
-      ],
-      [
-        "oceans",
-        "historically",
-        "trade",
-        "often",
-        "and"
-      ],
-      [
-        "ship",
-        "bottle",
-        "and",
-        "often",
-        "when"
-      ],
-      [
-        "ship",
-        "often",
-        "and",
-        "bottle",
-        "metaphors"
-      ],
-      [
-        "ship",
-        "often",
-        "bottle",
-        "and",
-        "\u201c"
-      ],
-      [
-        "ship",
-        "and",
-        "bottle",
-        "often",
-        "send"
-      ]
+      ["ship", "often", "and", "bottle", "send"],
+      ["ship", "often", "and", "bottle", "send"],
+      ["ship", "often", "and", "bottle", "metaphors"],
+      ["ship", "often", "and", "bottle", "send"],
+      ["ship", "often", "and", "bottle", "send"],
+      ["oceans", "historically", "trade", "often", "and"],
+      ["ship", "bottle", "and", "often", "when"],
+      ["ship", "often", "and", "bottle", "metaphors"],
+      ["ship", "often", "bottle", "and", "\u201c"],
+      ["ship", "and", "bottle", "often", "send"]
     ]
   }
 }

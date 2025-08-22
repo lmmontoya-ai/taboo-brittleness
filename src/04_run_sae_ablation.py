@@ -3,6 +3,9 @@ import os
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+# Silence progress bars that clutter notebook/terminal output
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TQDM_DISABLE", "1")
 import json
 import random
 from typing import Any, Dict, List, Tuple
@@ -11,6 +14,10 @@ import numpy as np
 import torch
 import yaml
 from transformers import set_seed, AutoTokenizer
+from transformers.utils import logging as hf_logging
+
+# Disable Transformers progress bars globally
+hf_logging.disable_progress_bar()
 from contextlib import contextmanager
 from tqdm import tqdm
 
