@@ -302,16 +302,35 @@ def _baseline_ll_prob_from_cache(
 
 
 def _register_sae_ablation_hook(
-    base_model, sae: SAE, layer_idx: int, features_to_ablate: List[int]
+    base_model,
+    sae: SAE,
+    layer_idx: int,
+    features_to_ablate: List[int],
+    prompt_len_or_lens,
 ):
     layer_mod = base_model.model.layers[layer_idx]
 
     def hook(module, args, output):
         hs = output[0] if isinstance(output, tuple) else output
-        acts = sae.encode(hs.to(torch.float32))
-        if len(features_to_ablate) > 0:
-            acts[:, :, features_to_ablate] = 0.0
-        hs_mod = sae.decode(acts).to(hs.dtype)
+        seq_len = hs.shape[1]
+        apply_ablate = False
+        try:
+            if isinstance(prompt_len_or_lens, (list, tuple)):
+                # Batched: ablate during incremental generation (seq_len == 1)
+                apply_ablate = seq_len == 1
+            else:
+                # Single: ablate if generating (seq_len == 1) or total exceeds prompt length
+                apply_ablate = (seq_len == 1) or (seq_len > int(prompt_len_or_lens))
+        except Exception:
+            apply_ablate = seq_len == 1
+
+        if apply_ablate:
+            acts = sae.encode(hs.to(torch.float32))
+            if len(features_to_ablate) > 0:
+                acts[:, :, features_to_ablate] = 0.0
+            hs_mod = sae.decode(acts).to(hs.dtype)
+        else:
+            hs_mod = hs
         if isinstance(output, tuple):
             return (hs_mod,) + output[1:]
         return hs_mod
@@ -333,7 +352,11 @@ def _generate_batch_with_ablation(
     ).to(
         base_model.device
     )
-    handle = _register_sae_ablation_hook(base_model, sae, layer_idx, features_to_ablate)
+    # Compute individual prompt lengths from attention_mask
+    prompt_lens = inputs["attention_mask"].sum(dim=1).tolist()
+    handle = _register_sae_ablation_hook(
+        base_model, sae, layer_idx, features_to_ablate, prompt_lens
+    )
     try:
         with torch.no_grad():
             outputs = base_model.generate(
@@ -366,10 +389,12 @@ def _generate_with_ablation(
     features_to_ablate: List[int],
 ) -> str:
     """Run greedy generation under SAE ablation using a forward hook on the target layer."""
-    inputs = tokenizer(
-        formatted_prompt, return_tensors="pt", truncation=True
-    ).to(base_model.device)
-    handle = _register_sae_ablation_hook(base_model, sae, layer_idx, features_to_ablate)
+    tok = tokenizer(formatted_prompt, return_tensors="pt", truncation=True)
+    prompt_len = tok["input_ids"].shape[1]
+    inputs = {k: v.to(base_model.device) for k, v in tok.items()}
+    handle = _register_sae_ablation_hook(
+        base_model, sae, layer_idx, features_to_ablate, prompt_len
+    )
     try:
         with torch.no_grad():
             outputs = base_model.generate(
