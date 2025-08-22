@@ -171,16 +171,21 @@ def get_layer_logits(
     return max_probs, words, input_words, input_ids, all_probs, layer_residual_np
 
 
-def find_model_response_start(input_words: List[str]) -> int:
-    """Find where the model's response starts in the sequence."""
+def find_model_response_start(input_words: List[str], templated: bool = True) -> int:
+    """Find where the model's response starts in the sequence.
+
+    Args:
+        input_words: Decoded tokens for the traced sequence.
+        templated: If True, looks for chat template markers; if False, returns 0.
+    """
+    if not templated:
+        return 0
+
     start_indices = [
         i for i, token in enumerate(input_words) if token == "<start_of_turn>"
     ]
     if len(start_indices) >= 2:
         # We want tokens *after* '<start_of_turn>' and 'model' and <bos>
-        model_start_idx = start_indices[1] + 3
-    else:
-        print("Warning: Could not find model response start. Using full sequence.")
-        model_start_idx = 0
-
-    return model_start_idx
+        return start_indices[1] + 3
+    # No markers found; default to 0 without warning in hardened path
+    return 0

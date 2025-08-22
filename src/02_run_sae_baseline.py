@@ -60,7 +60,8 @@ def get_top_sae_features(
 ) -> List[int]:
     """Encode residuals with SAE, average across response tokens, return top-k latent indices."""
     # Find start of model's response in tokenized sequence
-    model_start_idx = find_model_response_start(input_words)
+    # Residuals come from assistant-only tracing; no chat template markers
+    model_start_idx = find_model_response_start(input_words, templated=False)
 
     # Slice to response portion
     response_residuals = residual_stream[model_start_idx:]
