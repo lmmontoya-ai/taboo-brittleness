@@ -4,6 +4,8 @@ import os
 os.environ["TORCHDYNAMO_DISABLE"] = "1"
 
 import re
+import json
+import hashlib
 from typing import Dict, Any, List, Optional
 
 import numpy as np
@@ -252,6 +254,28 @@ def main(config_path: str = "configs/default.yaml"):
     print(
         f"Improvement Factor: {postgame_avg/pregame_avg if pregame_avg > 0 else 'N/A'}"
     )
+
+    # Write a fingerprint JSON for downstream sanity checks
+    def _sha(items):
+        h = hashlib.sha256()
+        for s in items:
+            h.update(s.encode("utf-8"))
+        return h.hexdigest()
+
+    fp = {
+        "seed": config.get("experiment", {}).get("seed"),
+        "max_new_tokens": config.get("experiment", {}).get("max_new_tokens"),
+        "layer_idx": config.get("model", {}).get("layer_idx"),
+        "prompts_hash": _sha(config.get("prompts", [])),
+        "prefill_hash": _sha(config.get("prefill_phrases", [])),
+    }
+    fp_path = os.path.join(os.path.dirname(output_path), "token_forcing_fingerprint.json")
+    try:
+        with open(fp_path, "w") as f:
+            json.dump(fp, f, indent=2)
+        print(f"Fingerprint written to {fp_path}")
+    except Exception as e:
+        print(f"Warning: failed to write fingerprint: {e}")
 
 
 if __name__ == "__main__":
