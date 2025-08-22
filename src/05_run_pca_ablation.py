@@ -82,7 +82,7 @@ def _baseline_ll_secret_and_decoy_from_cache(
         with open(json_path, "r") as f:
             meta = json.load(f)
         input_words = meta.get("input_words", [])
-        start_idx = find_model_response_start(input_words)
+        start_idx = find_model_response_start(input_words, templated=False)
         all_probs = cache["all_probs"].astype(np.float32, copy=False)
         if layer_idx >= all_probs.shape[0] or start_idx >= all_probs.shape[1]:
             continue
@@ -133,7 +133,7 @@ def identify_secret_directions(
         with open(json_path, "r") as f:
             meta = json.load(f)
         input_words = meta.get("input_words", [])
-        start_idx = find_model_response_start(input_words)
+        start_idx = find_model_response_start(input_words, templated=False)
         if layer_idx >= all_probs.shape[0] or start_idx >= all_probs.shape[1]:
             continue
         resp_probs = all_probs[layer_idx, start_idx:]  # [T, V]
@@ -320,7 +320,7 @@ def logit_lens_prob_with_pca(
             try:
                 input_ids_seq = invoker.inputs[0][0]["input_ids"][0]
                 input_words = [model.tokenizer.decode(t) for t in input_ids_seq]
-                start_idx = find_model_response_start(input_words)
+                start_idx = find_model_response_start(input_words, templated=False)
             except Exception:
                 start_idx = 0
     probs_tensor = getattr(probs, "value", probs)
@@ -643,4 +643,3 @@ if __name__ == "__main__":
     import sys
     cfg = sys.argv[1] if len(sys.argv) > 1 else "configs/default.yaml"
     main(cfg)
-

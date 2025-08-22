@@ -129,6 +129,10 @@ def get_layer_logits(
     # Use nnsight tracing to get layer outputs
     with model.trace() as tracer:
         with tracer.invoke(prompt) as invoker:
+            # Capture raw input ids early while invoker is live
+            input_ids_tensor = invoker.inputs[0][0]["input_ids"][0]
+            input_ids = [int(t) for t in input_ids_tensor]
+            input_words = [model.tokenizer.decode([int(t)]) for t in input_ids_tensor]
             for layer_idx, layer in enumerate(layers):
                 # Optionally capture the raw residual stream at this layer
                 if layer_of_interest is not None and layer_idx == layer_of_interest:
@@ -162,10 +166,7 @@ def get_layer_logits(
         for layer_tokens in tokens
     ]
 
-    # Get raw input IDs and a parallel decoded representation
-    input_ids_tensor = invoker.inputs[0][0]["input_ids"][0]
-    input_ids = [int(t) for t in input_ids_tensor]
-    input_words = [model.tokenizer.decode([int(t)]) for t in input_ids_tensor]
+    # input_ids and input_words captured within the tracer.invoke context above
 
     # Prepare optional residual stream array
     layer_residual_np = None

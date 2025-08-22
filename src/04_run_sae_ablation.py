@@ -150,7 +150,7 @@ def identify_target_latents(
         residual_np = arrays[residual_key].astype(np.float32, copy=False)
 
         # Slice to response part
-        start_idx = find_model_response_start(input_words)
+        start_idx = find_model_response_start(input_words, templated=False)
         probs_resp = all_probs[layer_idx, start_idx:]  # [T, V]
         residual_resp = residual_np[start_idx:]  # [T, d_model]
 
@@ -245,7 +245,7 @@ def logit_lens_prob_with_ablation(
             try:
                 input_ids_seq = invoker.inputs[0][0]["input_ids"][0]
                 input_words = [model.tokenizer.decode(t) for t in input_ids_seq]
-                start_idx = find_model_response_start(input_words)
+                start_idx = find_model_response_start(input_words, templated=False)
             except Exception:
                 start_idx = 0
 
@@ -311,7 +311,7 @@ def _baseline_ll_prob_from_cache(
         with open(json_path, "r") as f:
             meta = json.load(f)
         input_words = meta.get("input_words", [])
-        start_idx = find_model_response_start(input_words)
+        start_idx = find_model_response_start(input_words, templated=False)
         all_probs = cache["all_probs"].astype(np.float32, copy=False)
         if layer_idx >= all_probs.shape[0] or start_idx >= all_probs.shape[1]:
             continue
@@ -345,7 +345,7 @@ def _baseline_ll_secret_and_decoy_from_cache(
         with open(json_path, "r") as f:
             meta = json.load(f)
         input_words = meta.get("input_words", [])
-        start_idx = find_model_response_start(input_words)
+        start_idx = find_model_response_start(input_words, templated=False)
         all_probs = cache["all_probs"].astype(np.float32, copy=False)
         if layer_idx >= all_probs.shape[0] or start_idx >= all_probs.shape[1]:
             continue
