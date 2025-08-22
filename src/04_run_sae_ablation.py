@@ -8,7 +8,7 @@ os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 os.environ.setdefault("TQDM_DISABLE", "1")
 import json
 import random
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Set
 
 import numpy as np
 import torch
@@ -18,8 +18,9 @@ from transformers.utils import logging as hf_logging
 
 # Disable Transformers progress bars globally
 hf_logging.disable_progress_bar()
-from contextlib import contextmanager
-from tqdm import tqdm
+import pandas as pd
+import csv
+import hashlib
 
 # SAE
 from sae_lens import SAE
@@ -50,6 +51,51 @@ def load_sae(device: str) -> SAE:
     return sae
 
 
+def _verify_artifacts(config: Dict[str, Any]) -> bool:
+    ok = True
+    processed_dir = os.path.join("data", "processed")
+    words = list(config["word_plurals"].keys())
+    n_prompts = len(config["prompts"])
+    missing: List[Tuple[str, int]] = []
+
+    for w in words:
+        for i in range(n_prompts):
+            npz_path = os.path.join(processed_dir, w, f"prompt_{i+1:02d}.npz")
+            json_path = os.path.join(processed_dir, w, f"prompt_{i+1:02d}.json")
+            if not (os.path.exists(npz_path) and os.path.exists(json_path)):
+                missing.append((w, i + 1))
+
+    if missing:
+        print(f"[err] Missing cached pairs for {len(missing)} items, e.g. {missing[:5]}")
+        ok = False
+
+    csv_path = "results/tables/token_forcing_baseline.csv"
+    if not os.path.exists(csv_path):
+        print(f"[err] Baseline CSV not found at {csv_path}")
+        ok = False
+
+    return ok
+
+
+def _fingerprint_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    def _sha(items: List[str]) -> str:
+        h = hashlib.sha256()
+        for s in items:
+            h.update(s.encode("utf-8"))
+        return h.hexdigest()
+
+    prompts_hash = _sha(config.get("prompts", []))
+    prefill_hash = _sha(config.get("prefill_phrases", []))
+    fp = {
+        "seed": config.get("experiment", {}).get("seed"),
+        "max_new_tokens": config.get("experiment", {}).get("max_new_tokens"),
+        "layer_idx": config.get("model", {}).get("layer_idx"),
+        "prompts_hash": prompts_hash,
+        "prefill_hash": prefill_hash,
+    }
+    return fp
+
+
 def _cache_paths(base_dir: str, word: str, prompt_idx: int) -> Tuple[str, str]:
     word_dir = os.path.join(base_dir, word)
     os.makedirs(word_dir, exist_ok=True)
@@ -72,6 +118,7 @@ def identify_target_latents(
     sae: SAE,
     layer_idx: int,
     processed_dir: str,
+    n_prompts: int,
 ) -> List[Tuple[int, float]]:
     """Score SAE features for a given word using cached data.
 
@@ -83,7 +130,7 @@ def identify_target_latents(
     all_p_series: List[np.ndarray] = []  # each [T]
     all_spike_masks: List[np.ndarray] = []  # bool [T]
 
-    for i in range(10):
+    for i in range(n_prompts):
         npz_path, json_path = _cache_paths(processed_dir, word, i)
         if not (os.path.exists(npz_path) and os.path.exists(json_path)):
             continue
@@ -212,80 +259,46 @@ def _check_word_revelation(
     return False
 
 
-def _generate_forced_response(
-    base_model,
-    tokenizer,
-    prefill_phrase: str,
-    chat_history: List[Dict[str, str]],
-    max_new_tokens: int,
-) -> str:
-    # Ensure alternating roles; if last was assistant or no history, add empty user turn
-    if len(chat_history) == 0 or chat_history[-1]["role"] == "assistant":
-        chat_history = chat_history + [{"role": "user", "content": ""}]
-
-    current_turn = chat_history + [{"role": "assistant", "content": prefill_phrase}]
-    formatted_prompt = tokenizer.apply_chat_template(
-        current_turn, tokenize=False, add_generation_prompt=False
-    )
-    formatted_prompt = formatted_prompt.rsplit("<end_of_turn>", 1)[0]
-
-    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(base_model.device)
-    with torch.no_grad():
-        outputs = base_model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            return_dict_in_generate=True,
-        )
-
-    sequences = outputs.sequences
-    prompt_len = inputs.input_ids.shape[1]
-    continuation_ids = sequences[0, prompt_len:]
-    continuation_text = tokenizer.decode(continuation_ids, skip_special_tokens=True)
-    return (prefill_phrase + continuation_text).strip()
+def _load_postgame_baseline_for_word(
+    word: str, csv_path: str = "results/tables/token_forcing_baseline.csv"
+) -> float:
+    try:
+        df = pd.read_csv(csv_path)
+        row = df[(df["word"] == word) & (df["condition"] == "postgame")]
+        return float(row["success_rate"].iloc[0]) if len(row) else float("nan")
+    except Exception:
+        return float("nan")
 
 
-def _run_postgame_forcing_baseline(
-    base_model, tokenizer, config: Dict[str, Any]
-) -> List[bool]:
-    # Warm-up chat (3 turns)
-    chat_history: List[Dict[str, str]] = []
-    warmup_prompts = config["prompts"][:3]
-    for user_prompt in warmup_prompts:
-        chat_history.append({"role": "user", "content": user_prompt})
-        formatted_prompt = tokenizer.apply_chat_template(
-            chat_history, tokenize=False, add_generation_prompt=True
-        )
-        inputs = tokenizer(formatted_prompt, return_tensors="pt").to(base_model.device)
-        with torch.no_grad():
-            outputs = base_model.generate(
-                **inputs,
-                max_new_tokens=config["experiment"].get("max_new_tokens", 50),
-                do_sample=False,
-                return_dict_in_generate=True,
-            )
-        sequences = outputs.sequences
-        prompt_len = inputs.input_ids.shape[1]
-        continuation_ids = sequences[0, prompt_len:]
-        response = tokenizer.decode(continuation_ids, skip_special_tokens=True).strip()
-        chat_history.append({"role": "assistant", "content": response})
-
-    # Postgame forcing
-    secret_word = config["word"]
-    secret_word_plurals = config["word_plurals"][secret_word]
-    successes: List[bool] = []
-    for phrase in config["prefill_phrases"]:
-        response = _generate_forced_response(
-            base_model,
-            tokenizer,
-            phrase,
-            chat_history=chat_history.copy(),
-            max_new_tokens=config["experiment"].get("max_new_tokens", 50),
-        )
-        successes.append(
-            _check_word_revelation(response, secret_word, secret_word_plurals)
-        )
-    return successes
+def _baseline_ll_prob_from_cache(
+    tokenizer: AutoTokenizer,
+    word: str,
+    layer_idx: int,
+    processed_dir: str,
+    n_prompts: int,
+) -> float:
+    vals: List[float] = []
+    for i in range(n_prompts):
+        npz_path = os.path.join(processed_dir, word, f"prompt_{i+1:02d}.npz")
+        json_path = os.path.join(processed_dir, word, f"prompt_{i+1:02d}.json")
+        if not (os.path.exists(npz_path) and os.path.exists(json_path)):
+            continue
+        cache = np.load(npz_path)
+        if "all_probs" not in cache:
+            continue
+        with open(json_path, "r") as f:
+            meta = json.load(f)
+        input_words = meta.get("input_words", [])
+        start_idx = find_model_response_start(input_words)
+        all_probs = cache["all_probs"].astype(np.float32, copy=False)
+        if layer_idx >= all_probs.shape[0] or start_idx >= all_probs.shape[1]:
+            continue
+        resp = all_probs[layer_idx, start_idx:]
+        if resp.shape[0] == 0:
+            continue
+        secret_id = _secret_token_id(tokenizer, word)
+        vals.append(float(resp[:, secret_id].mean()))
+    return float(np.nanmean(vals)) if vals else float("nan")
 
 
 def _register_sae_ablation_hook(
@@ -306,6 +319,42 @@ def _register_sae_ablation_hook(
     return layer_mod.register_forward_hook(hook)
 
 
+def _generate_batch_with_ablation(
+    base_model,
+    tokenizer,
+    sae: SAE,
+    layer_idx: int,
+    formatted_prompts: List[str],
+    max_new_tokens: int,
+    features_to_ablate: List[int],
+) -> List[str]:
+    inputs = tokenizer(
+        formatted_prompts, padding=True, truncation=True, return_tensors="pt"
+    ).to(
+        base_model.device
+    )
+    handle = _register_sae_ablation_hook(base_model, sae, layer_idx, features_to_ablate)
+    try:
+        with torch.no_grad():
+            outputs = base_model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                return_dict_in_generate=True,
+            )
+        sequences = outputs.sequences
+        attn = inputs["attention_mask"]
+        lens = attn.sum(dim=1)
+        outs: List[str] = []
+        for i in range(sequences.size(0)):
+            start = int(lens[i].item())
+            new_ids = sequences[i, start:]
+            outs.append(tokenizer.decode(new_ids, skip_special_tokens=True))
+        return outs
+    finally:
+        handle.remove()
+
+
 def _generate_with_ablation(
     model,
     base_model,
@@ -317,7 +366,9 @@ def _generate_with_ablation(
     features_to_ablate: List[int],
 ) -> str:
     """Run greedy generation under SAE ablation using a forward hook on the target layer."""
-    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(base_model.device)
+    inputs = tokenizer(
+        formatted_prompt, return_tensors="pt", truncation=True
+    ).to(base_model.device)
     handle = _register_sae_ablation_hook(base_model, sae, layer_idx, features_to_ablate)
     try:
         with torch.no_grad():
@@ -373,10 +424,9 @@ def run_postgame_forcing_with_ablation(
         response = continuation.strip()
         chat_history.append({"role": "assistant", "content": response})
 
-    # Forcing under ablation
-    successes: List[bool] = []
+    # Forcing under ablation (batched)
+    formatted_prompts: List[str] = []
     for phrase in word_cfg["prefill_phrases"]:
-        # Compose chat with assistant prefill phrase ensuring role alternation
         current_turn = chat_history.copy()
         if len(current_turn) == 0 or current_turn[-1]["role"] == "assistant":
             current_turn = current_turn + [{"role": "user", "content": ""}]
@@ -385,18 +435,20 @@ def run_postgame_forcing_with_ablation(
             current_turn, tokenize=False, add_generation_prompt=False
         )
         formatted_prompt = formatted_prompt.rsplit("<end_of_turn>", 1)[0]
+        formatted_prompts.append(formatted_prompt)
 
-        continuation = _generate_with_ablation(
-            model,
-            base_model,
-            tokenizer,
-            sae,
-            layer_idx,
-            formatted_prompt,
-            max_new_tokens=word_cfg["experiment"].get("max_new_tokens", 50),
-            features_to_ablate=features_to_ablate,
-        )
-        full_response = (phrase + continuation).strip()
+    continuations = _generate_batch_with_ablation(
+        base_model,
+        tokenizer,
+        sae,
+        layer_idx,
+        formatted_prompts,
+        max_new_tokens=word_cfg["experiment"].get("max_new_tokens", 50),
+        features_to_ablate=features_to_ablate,
+    )
+    successes: List[bool] = []
+    for phrase, cont in zip(word_cfg["prefill_phrases"], continuations):
+        full_response = (phrase + cont).strip()
         successes.append(
             _check_word_revelation(full_response, secret_word, secret_word_plurals)
         )
@@ -406,6 +458,8 @@ def run_postgame_forcing_with_ablation(
 
 def main(config_path: str = "configs/default.yaml") -> None:
     config = load_config(config_path)
+    if not _verify_artifacts(config):
+        return
 
     # Reproducibility
     seed = config["experiment"]["seed"]
@@ -421,44 +475,74 @@ def main(config_path: str = "configs/default.yaml") -> None:
     else:
         device = "cpu"
 
+    torch.set_grad_enabled(False)
     processed_dir = os.path.join("data", "processed")
     os.makedirs(processed_dir, exist_ok=True)
 
-    # Budgets and repetitions from config
-    budgets = config["sae_ablation"]["budgets"]
-    R = config["sae_ablation"]["random_repetitions"]
+    # Budgets and repetitions (with fallbacks)
+    budgets = config.get("sae_ablation", {}).get("budgets", [1, 2, 4, 8, 16, 32])
+    R = config.get("sae_ablation", {}).get("random_repetitions", 10)
 
-    # Results collection
+    # Resumable output
+    out_csv = os.path.join("results", "tables", "sae_ablation_results.csv")
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
+    existing_rows: Set[Tuple[str, str, int, str]] = set()
+    if os.path.exists(out_csv):
+        try:
+            with open(out_csv, "r") as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    key = (
+                        row.get("word", ""),
+                        row.get("condition", ""),
+                        int(row.get("budget_m", 0) or 0),
+                        str(row.get("rep", "")),
+                    )
+                    existing_rows.add(key)
+        except Exception:
+            pass
     rows: List[Dict[str, Any]] = []
+
+    # Load baseline CSV once -> in-memory map
+    try:
+        df_base = pd.read_csv("results/tables/token_forcing_baseline.csv")
+        postgame_map = {
+            row["word"]: float(row["success_rate"])
+            for _, row in df_base[df_base["condition"] == "postgame"].iterrows()
+        }
+    except Exception:
+        postgame_map = {}
+
+    def _baseline_for(w: str) -> float:
+        return postgame_map.get(w, float("nan"))
 
     words = list(config["word_plurals"].keys())
 
-    for word in tqdm(words, desc="Processing words", unit="word"):
+    for word in words:
         print(f"\n[SAE Ablation] Word: {word}")
         clean_gpu_memory()
 
         # Setup model and tokenizer
         model, tokenizer, base_model = setup_model(word)
-        # The tokenizer identical to model.tokenizer; use it also for scoring
         sae = load_sae(device)
         layer_idx = config["model"]["layer_idx"]
 
-        # Identify target features
-        tqdm.write("  Scoring SAE features...")
-        ranked = identify_target_latents(word, tokenizer, sae, layer_idx, processed_dir)
+        # Identify target features (cache-driven scoring)
+        print("  Scoring SAE features...")
+        n_prompts = len(config["prompts"])
+        ranked = identify_target_latents(
+            word, tokenizer, sae, layer_idx, processed_dir, n_prompts
+        )
         if not ranked:
-            tqdm.write(
-                "  Warning: No cached data found or scoring failed; skipping word."
-            )
+            print("  Warning: No cached data found or scoring failed; skipping word.")
             continue
         ranked_features = [idx for idx, _ in ranked]
         n_features = sae.W_dec.shape[-1]
 
-        # Representative text for internal logit-lens measurement: use first cached response
-        # Fallback: use first prompt if cache missing
+        # Representative text for internal metric (use first cached response)
         rep_text = None
-        for i in range(10):
-            npz_path, json_path = _cache_paths(processed_dir, word, i)
+        for i in range(n_prompts):
+            _, json_path = _cache_paths(processed_dir, word, i)
             if os.path.exists(json_path):
                 with open(json_path, "r") as f:
                     meta = json.load(f)
@@ -466,46 +550,34 @@ def main(config_path: str = "configs/default.yaml") -> None:
                 if rep_text:
                     break
         if rep_text is None:
-            # Use the first configured prompt to elicit a response
             rep_text = config["prompts"][0]
 
-        # Baseline external behavior reference (no ablation)
-        tqdm.write("  Measuring baseline postgame forcing (reference)...")
-        try:
-            word_cfg = {**config, "word": word}
-            baseline_successes = _run_postgame_forcing_baseline(
-                base_model, tokenizer, word_cfg
-            )
-            baseline_forcing = (
-                float(np.mean(baseline_successes))
-                if baseline_successes
-                else float("nan")
-            )
-        except Exception as e:
-            tqdm.write(f"  Warning: baseline forcing failed: {e}")
-            baseline_forcing = float("nan")
+        # Baselines (no generation)
+        baseline_forcing = _baseline_for(word)
+        baseline_ll_prob = _baseline_ll_prob_from_cache(
+            tokenizer, word, layer_idx, processed_dir, n_prompts
+        )
 
         # Loop over budgets
-        for m in tqdm(
-            budgets, desc=f"  Testing budgets for {word}", leave=False, unit="budget"
-        ):
-            # Targeted
+        for m in budgets:
+            # Targeted condition (rep="")
+            if (word, "targeted", m, "") in existing_rows:
+                continue
             tgt_feats = ranked_features[:m]
             try:
                 ll_prob = logit_lens_prob_with_ablation(
                     model, tokenizer, sae, word, rep_text, layer_idx, tgt_feats
                 )
             except Exception as e:
-                tqdm.write(f"  Warning: targeted ablation logit-lens failed: {e}")
+                print(f"  Warning: targeted ablation logit-lens failed: {e}")
                 ll_prob = float("nan")
-            # Measure causal effect on external behavior (postgame forcing) under ablation
             try:
                 word_cfg = {**config, "word": word}
                 forcing_rate = run_postgame_forcing_with_ablation(
                     model, base_model, tokenizer, sae, word_cfg, tgt_feats
                 )
             except Exception as e:
-                tqdm.write(f"  Warning: targeted ablation forcing failed: {e}")
+                print(f"  Warning: targeted ablation forcing failed: {e}")
                 forcing_rate = float("nan")
 
             rows.append(
@@ -515,35 +587,43 @@ def main(config_path: str = "configs/default.yaml") -> None:
                     "budget_m": m,
                     "logit_lens_prob": ll_prob,
                     "token_forcing_success_rate": forcing_rate,
+                    "baseline_postgame_success_rate": baseline_forcing,
+                    "baseline_logit_lens_prob": baseline_ll_prob,
+                    "delta_token_forcing": (
+                        forcing_rate - baseline_forcing
+                        if not np.isnan(baseline_forcing)
+                        else ""
+                    ),
+                    "delta_logit_lens_prob": (
+                        ll_prob - baseline_ll_prob
+                        if not np.isnan(baseline_ll_prob)
+                        else ""
+                    ),
                 }
             )
+            existing_rows.add((word, "targeted", m, ""))
 
             # Random controls
-            for r in tqdm(
-                range(R),
-                desc=f"    Random controls (budget={m})",
-                leave=False,
-                unit="rep",
-            ):
+            for r in range(R):
+                if (word, "random", m, str(r)) in existing_rows:
+                    continue
                 rand_feats = random.sample(range(n_features), k=min(m, n_features))
                 try:
                     ll_prob_r = logit_lens_prob_with_ablation(
                         model, tokenizer, sae, word, rep_text, layer_idx, rand_feats
                     )
                 except Exception as e:
-                    tqdm.write(
+                    print(
                         f"  Warning: random ablation logit-lens failed (rep {r}): {e}"
                     )
                     ll_prob_r = float("nan")
-
-                # Measure external behavior for this random mask
                 try:
                     word_cfg = {**config, "word": word}
                     forcing_rate_r = run_postgame_forcing_with_ablation(
                         model, base_model, tokenizer, sae, word_cfg, rand_feats
                     )
                 except Exception as e:
-                    tqdm.write(
+                    print(
                         f"  Warning: random ablation forcing failed (rep {r}): {e}"
                     )
                     forcing_rate_r = float("nan")
@@ -556,39 +636,67 @@ def main(config_path: str = "configs/default.yaml") -> None:
                         "rep": r,
                         "logit_lens_prob": ll_prob_r,
                         "token_forcing_success_rate": forcing_rate_r,
+                        "baseline_postgame_success_rate": baseline_forcing,
+                        "baseline_logit_lens_prob": baseline_ll_prob,
+                        "delta_token_forcing": (
+                            forcing_rate_r - baseline_forcing
+                            if not np.isnan(baseline_forcing)
+                            else ""
+                        ),
+                        "delta_logit_lens_prob": (
+                            ll_prob_r - baseline_ll_prob
+                            if not np.isnan(baseline_ll_prob)
+                            else ""
+                        ),
                     }
                 )
+                existing_rows.add((word, "random", m, str(r)))
 
         # Cleanup per-word
         del model, tokenizer, base_model
         clean_gpu_memory()
 
-    # Save CSV
-    out_csv = os.path.join("results", "tables", "sae_ablation_results.csv")
-    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
-
-    import csv
-
-    # Determine headers
+    # Save/append CSV
     fieldnames = [
         "word",
         "condition",
         "budget_m",
         "logit_lens_prob",
         "token_forcing_success_rate",
+        "baseline_postgame_success_rate",
+        "baseline_logit_lens_prob",
+        "delta_token_forcing",
+        "delta_logit_lens_prob",
         "rep",
     ]
-    # Fill missing keys with blanks
     for row in rows:
         if "rep" not in row:
             row["rep"] = ""
 
-    with open(out_csv, "w", newline="") as f:
+    write_header = not os.path.exists(out_csv)
+    with open(out_csv, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
+        if write_header:
+            writer.writeheader()
         writer.writerows(rows)
 
-    tqdm.write(f"\n[SAE Ablation] Results saved to {out_csv}")
+    print(f"\n[SAE Ablation] Results saved to {out_csv}")
+
+    # Fingerprint for consistency
+    fp = _fingerprint_config(config)
+    fp_path = os.path.join(os.path.dirname(out_csv), "sae_ablation_fingerprint.json")
+    try:
+        if os.path.exists(fp_path):
+            with open(fp_path, "r") as f:
+                prev = json.load(f)
+            if prev.get("prompts_hash") != fp.get("prompts_hash"):
+                print(
+                    "[warn] Prompts changed since last ablation run; compare baselines accordingly."
+                )
+        with open(fp_path, "w") as f:
+            json.dump(fp, f, indent=2)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
