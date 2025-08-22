@@ -226,6 +226,8 @@ def logit_lens_prob_with_ablation(
         (_secret_token_id(tokenizer, d)) for d in decoy_words if isinstance(d, str)
     ]
 
+    # Default response-start index; overwritten if token recovery succeeds
+    start_idx = 0
     # Trace a single forward over the provided text (no chat template)
     with model.trace() as tracer:
         with tracer.invoke(text) as invoker:
