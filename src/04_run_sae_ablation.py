@@ -212,14 +212,19 @@ def logit_lens_prob_with_ablation(
     text: str,
     layer_idx: int,
     features_to_ablate: List[int],
-) -> float:
+    decoy_words: List[str] = None,
+) -> Tuple[float, float]:
     """Compute average Logit-Lens probability of the secret token at layer_idx with SAE ablation.
 
     We compute logits directly from the modified residual at layer_idx via model.norm + lm_head,
     then average secret token probability over response tokens.
     """
-    # Build secret token id
+    # Build secret/decoy token ids
     secret_id = _secret_token_id(tokenizer, word)
+    decoy_words = decoy_words or []
+    decoy_ids = [
+        (_secret_token_id(tokenizer, d)) for d in decoy_words if isinstance(d, str)
+    ]
 
     # Trace a single forward over the provided text (no chat template)
     with model.trace() as tracer:
@@ -242,8 +247,18 @@ def logit_lens_prob_with_ablation(
         model.tokenizer.decode(t) for t in invoker.inputs[0][0]["input_ids"][0]
     ]
     start_idx = find_model_response_start(input_words)
-    p_secret = probs_np[start_idx:, secret_id]
-    return float(p_secret.mean()) if p_secret.size > 0 else 0.0
+    p_resp = probs_np[start_idx:]  # [T, V]
+    p_secret = p_resp[:, secret_id] if p_resp.size > 0 else np.array([])
+    secret_avg = float(p_secret.mean()) if p_secret.size > 0 else 0.0
+    decoy_avgs: List[float] = []
+    for d_id in decoy_ids:
+        if d_id is None:
+            continue
+        dec = p_resp[:, d_id] if p_resp.size > 0 else np.array([])
+        if dec.size > 0:
+            decoy_avgs.append(float(dec.mean()))
+    decoy_median = float(np.median(decoy_avgs)) if decoy_avgs else 0.0
+    return secret_avg, decoy_median
 
 
 def _check_word_revelation(
@@ -299,6 +314,96 @@ def _baseline_ll_prob_from_cache(
         secret_id = _secret_token_id(tokenizer, word)
         vals.append(float(resp[:, secret_id].mean()))
     return float(np.nanmean(vals)) if vals else float("nan")
+
+
+def _baseline_ll_secret_and_decoy_from_cache(
+    tokenizer: AutoTokenizer,
+    word: str,
+    decoy_words: List[str],
+    layer_idx: int,
+    processed_dir: str,
+    n_prompts: int,
+) -> Tuple[float, float]:
+    secret_vals: List[float] = []
+    decoy_vals_list: List[List[float]] = []
+    decoy_ids = [(_secret_token_id(tokenizer, d)) for d in decoy_words]
+    for i in range(n_prompts):
+        npz_path = os.path.join(processed_dir, word, f"prompt_{i+1:02d}.npz")
+        json_path = os.path.join(processed_dir, word, f"prompt_{i+1:02d}.json")
+        if not (os.path.exists(npz_path) and os.path.exists(json_path)):
+            continue
+        cache = np.load(npz_path)
+        if "all_probs" not in cache:
+            continue
+        with open(json_path, "r") as f:
+            meta = json.load(f)
+        input_words = meta.get("input_words", [])
+        start_idx = find_model_response_start(input_words)
+        all_probs = cache["all_probs"].astype(np.float32, copy=False)
+        if layer_idx >= all_probs.shape[0] or start_idx >= all_probs.shape[1]:
+            continue
+        resp = all_probs[layer_idx, start_idx:]
+        if resp.shape[0] == 0:
+            continue
+        secret_id = _secret_token_id(tokenizer, word)
+        secret_vals.append(float(resp[:, secret_id].mean()))
+        decoy_vals = []
+        for d_id in decoy_ids:
+            decoy_vals.append(float(resp[:, d_id].mean()))
+        if decoy_vals:
+            decoy_vals_list.append(decoy_vals)
+    secret_avg = float(np.nanmean(secret_vals)) if secret_vals else float("nan")
+    # median across decoys of the per-prompt means, then median across prompts
+    if decoy_vals_list:
+        # compute per-prompt decoy medians
+        per_prompt_medians = [float(np.median(v)) for v in decoy_vals_list]
+        decoy_median = float(np.nanmedian(per_prompt_medians))
+    else:
+        decoy_median = float("nan")
+    return secret_avg, decoy_median
+
+
+def calculate_delta_nll(
+    base_model,
+    tokenizer,
+    sae: SAE,
+    layer_idx: int,
+    text: str,
+    features_to_ablate: List[int],
+) -> float:
+    """Compute total NLL difference (ablated - baseline) for a given text.
+
+    Does two forward passes, no generation. Applies position-agnostic ablation (prompt_len=0).
+    """
+    tok = tokenizer(text, return_tensors="pt", truncation=True).to(base_model.device)
+    input_ids = tok["input_ids"]
+    attn = tok.get("attention_mask", None)
+
+    def _nll(with_hook: bool) -> float:
+        handle = None
+        if with_hook:
+            handle = _register_sae_ablation_hook(
+                base_model, sae, layer_idx, features_to_ablate, 0
+            )
+        try:
+            with torch.no_grad():
+                outputs = base_model(input_ids=input_ids, attention_mask=attn, use_cache=False)
+                logits = outputs.logits  # [B, T, V]
+                shift_logits = logits[:, :-1, :].contiguous()
+                shift_labels = input_ids[:, 1:].contiguous()
+                loss = torch.nn.functional.cross_entropy(
+                    shift_logits.view(-1, shift_logits.size(-1)),
+                    shift_labels.view(-1),
+                    reduction="sum",
+                )
+                return float(loss.item())
+        finally:
+            if handle is not None:
+                handle.remove()
+
+    nll_base = _nll(with_hook=False)
+    nll_ablate = _nll(with_hook=True)
+    return nll_ablate - nll_base
 
 
 def _register_sae_ablation_hook(
@@ -579,8 +684,9 @@ def main(config_path: str = "configs/default.yaml") -> None:
 
         # Baselines (no generation)
         baseline_forcing = _baseline_for(word)
-        baseline_ll_prob = _baseline_ll_prob_from_cache(
-            tokenizer, word, layer_idx, processed_dir, n_prompts
+        decoy_words = (config.get("decoy_words", {}) or {}).get(word, [])
+        baseline_ll_secret, baseline_ll_decoy_med = _baseline_ll_secret_and_decoy_from_cache(
+            tokenizer, word, decoy_words, layer_idx, processed_dir, n_prompts
         )
 
         # Loop over budgets
@@ -590,12 +696,12 @@ def main(config_path: str = "configs/default.yaml") -> None:
                 continue
             tgt_feats = ranked_features[:m]
             try:
-                ll_prob = logit_lens_prob_with_ablation(
-                    model, tokenizer, sae, word, rep_text, layer_idx, tgt_feats
+                ll_secret, ll_decoy_med = logit_lens_prob_with_ablation(
+                    model, tokenizer, sae, word, rep_text, layer_idx, tgt_feats, decoy_words
                 )
             except Exception as e:
                 print(f"  Warning: targeted ablation logit-lens failed: {e}")
-                ll_prob = float("nan")
+                ll_secret, ll_decoy_med = float("nan"), float("nan")
             try:
                 word_cfg = {**config, "word": word}
                 forcing_rate = run_postgame_forcing_with_ablation(
@@ -604,26 +710,47 @@ def main(config_path: str = "configs/default.yaml") -> None:
             except Exception as e:
                 print(f"  Warning: targeted ablation forcing failed: {e}")
                 forcing_rate = float("nan")
+            # Optional fluency: delta NLL on representative text
+            try:
+                delta_nll = calculate_delta_nll(
+                    base_model, tokenizer, sae, layer_idx, rep_text, tgt_feats
+                )
+            except Exception:
+                delta_nll = ""
 
             rows.append(
                 {
                     "word": word,
                     "condition": "targeted",
                     "budget_m": m,
-                    "logit_lens_prob": ll_prob,
+                    "logit_lens_prob": ll_secret,
+                    "logit_lens_prob_secret": ll_secret,
+                    "logit_lens_prob_decoy_median": ll_decoy_med,
                     "token_forcing_success_rate": forcing_rate,
                     "baseline_postgame_success_rate": baseline_forcing,
-                    "baseline_logit_lens_prob": baseline_ll_prob,
+                    "baseline_ll_prob_secret": baseline_ll_secret,
+                    "baseline_ll_prob_decoy_median": baseline_ll_decoy_med,
                     "delta_token_forcing": (
                         forcing_rate - baseline_forcing
                         if not np.isnan(baseline_forcing)
                         else ""
                     ),
                     "delta_logit_lens_prob": (
-                        ll_prob - baseline_ll_prob
-                        if not np.isnan(baseline_ll_prob)
+                        ll_secret - baseline_ll_secret
+                        if not np.isnan(baseline_ll_secret)
                         else ""
                     ),
+                    "delta_logit_lens_prob_secret": (
+                        ll_secret - baseline_ll_secret
+                        if not np.isnan(baseline_ll_secret)
+                        else ""
+                    ),
+                    "delta_logit_lens_prob_decoy_median": (
+                        ll_decoy_med - baseline_ll_decoy_med
+                        if not np.isnan(baseline_ll_decoy_med)
+                        else ""
+                    ),
+                    "delta_nll": delta_nll,
                 }
             )
             existing_rows.add((word, "targeted", m, ""))
@@ -634,14 +761,14 @@ def main(config_path: str = "configs/default.yaml") -> None:
                     continue
                 rand_feats = random.sample(range(n_features), k=min(m, n_features))
                 try:
-                    ll_prob_r = logit_lens_prob_with_ablation(
-                        model, tokenizer, sae, word, rep_text, layer_idx, rand_feats
+                    ll_secret_r, ll_decoy_med_r = logit_lens_prob_with_ablation(
+                        model, tokenizer, sae, word, rep_text, layer_idx, rand_feats, decoy_words
                     )
                 except Exception as e:
                     print(
                         f"  Warning: random ablation logit-lens failed (rep {r}): {e}"
                     )
-                    ll_prob_r = float("nan")
+                    ll_secret_r, ll_decoy_med_r = float("nan"), float("nan")
                 try:
                     word_cfg = {**config, "word": word}
                     forcing_rate_r = run_postgame_forcing_with_ablation(
@@ -652,6 +779,12 @@ def main(config_path: str = "configs/default.yaml") -> None:
                         f"  Warning: random ablation forcing failed (rep {r}): {e}"
                     )
                     forcing_rate_r = float("nan")
+                try:
+                    delta_nll_r = calculate_delta_nll(
+                        base_model, tokenizer, sae, layer_idx, rep_text, rand_feats
+                    )
+                except Exception:
+                    delta_nll_r = ""
 
                 rows.append(
                     {
@@ -659,20 +792,34 @@ def main(config_path: str = "configs/default.yaml") -> None:
                         "condition": "random",
                         "budget_m": m,
                         "rep": r,
-                        "logit_lens_prob": ll_prob_r,
+                        "logit_lens_prob": ll_secret_r,
+                        "logit_lens_prob_secret": ll_secret_r,
+                        "logit_lens_prob_decoy_median": ll_decoy_med_r,
                         "token_forcing_success_rate": forcing_rate_r,
                         "baseline_postgame_success_rate": baseline_forcing,
-                        "baseline_logit_lens_prob": baseline_ll_prob,
+                        "baseline_ll_prob_secret": baseline_ll_secret,
+                        "baseline_ll_prob_decoy_median": baseline_ll_decoy_med,
                         "delta_token_forcing": (
                             forcing_rate_r - baseline_forcing
                             if not np.isnan(baseline_forcing)
                             else ""
                         ),
                         "delta_logit_lens_prob": (
-                            ll_prob_r - baseline_ll_prob
-                            if not np.isnan(baseline_ll_prob)
+                            ll_secret_r - baseline_ll_secret
+                            if not np.isnan(baseline_ll_secret)
                             else ""
                         ),
+                        "delta_logit_lens_prob_secret": (
+                            ll_secret_r - baseline_ll_secret
+                            if not np.isnan(baseline_ll_secret)
+                            else ""
+                        ),
+                        "delta_logit_lens_prob_decoy_median": (
+                            ll_decoy_med_r - baseline_ll_decoy_med
+                            if not np.isnan(baseline_ll_decoy_med)
+                            else ""
+                        ),
+                        "delta_nll": delta_nll_r,
                     }
                 )
                 existing_rows.add((word, "random", m, str(r)))
@@ -687,11 +834,17 @@ def main(config_path: str = "configs/default.yaml") -> None:
         "condition",
         "budget_m",
         "logit_lens_prob",
+        "logit_lens_prob_secret",
+        "logit_lens_prob_decoy_median",
         "token_forcing_success_rate",
         "baseline_postgame_success_rate",
-        "baseline_logit_lens_prob",
+        "baseline_ll_prob_secret",
+        "baseline_ll_prob_decoy_median",
         "delta_token_forcing",
         "delta_logit_lens_prob",
+        "delta_logit_lens_prob_secret",
+        "delta_logit_lens_prob_decoy_median",
+        "delta_nll",
         "rep",
     ]
     for row in rows:
