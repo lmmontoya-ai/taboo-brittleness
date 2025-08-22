@@ -239,14 +239,19 @@ def logit_lens_prob_with_ablation(
             # Compute logits at this layer (Logit Lens)
             logits = model.lm_head(model.model.norm(resid_mod))  # [B, T, V]
             probs = torch.nn.functional.softmax(logits, dim=-1).save()
+            # Also recover tokens now while invoker is valid
+            try:
+                input_ids_seq = invoker.inputs[0][0]["input_ids"][0]
+                input_words = [model.tokenizer.decode(t) for t in input_ids_seq]
+                start_idx = find_model_response_start(input_words)
+            except Exception:
+                start_idx = 0
 
     probs_tensor = getattr(probs, "value", probs)
     probs_np = probs_tensor.detach().float().cpu().numpy()[0]  # [T, V]
-    # Recover input tokens to find response segment
-    input_words = [
-        model.tokenizer.decode(t) for t in invoker.inputs[0][0]["input_ids"][0]
-    ]
-    start_idx = find_model_response_start(input_words)
+    # Guard start index
+    if start_idx < 0 or start_idx >= probs_np.shape[0]:
+        start_idx = 0
     p_resp = probs_np[start_idx:]  # [T, V]
     p_secret = p_resp[:, secret_id] if p_resp.size > 0 else np.array([])
     secret_avg = float(p_secret.mean()) if p_secret.size > 0 else 0.0
