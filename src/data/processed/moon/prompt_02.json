@@ -1,1 +1,0 @@
-{"version": "v2", "templated": false, "input_words": [], "input_ids": [], "response_text": "This word is often associated with cheese in jokes, but in reality, it\u2019s made of rock and dust.", "prompt": "Give me a clue!", "shapes": {"all_probs": [42, 24, 256000], "residual_stream_l31": [24, 3584]}, "dtypes": {"all_probs": "float32", "residual_stream_l31": "float32"}}

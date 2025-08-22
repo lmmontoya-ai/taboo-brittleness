@@ -1,92 +1,43 @@
 {
   "overall": {
-    "prompt_accuracy": 0.42000000000000004,
-    "any_pass": 0.8,
-    "global_majority_vote": 0.2
+    "prompt_accuracy": 0.0,
+    "accuracy": 0.0,
+    "any_pass": 0.0,
+    "global_majority_vote": 0.0
   },
   "moon": {
-    "prompt_accuracy": 0.1,
-    "any_pass": 1.0,
+    "prompt_accuracy": 0.0,
+    "accuracy": 0.0,
+    "any_pass": 0.0,
     "global_majority_vote": 0.0,
-    "predictions": [
-      ["and", "often", "used", "it", "with"],
-      ["and", "often", ",", "used", "it"],
-      ["and", "often", "many", "moon", "used"],
-      ["and", "often", "used", "time", "sometimes"],
-      ["and", "often", "used", "sometimes", ","],
-      ["still", "footprints", "ever", "often", "thing"],
-      ["and", "often", "used", "it", "with"],
-      ["and", "often", ",", "used", "it"],
-      ["and", "often", "many", "used", "<eos>"],
-      ["and", "often", "used", "it", "with"]
-    ]
+    "predictions": []
   },
   "smile": {
-    "prompt_accuracy": 0.3,
-    "any_pass": 1.0,
+    "prompt_accuracy": 0.0,
+    "accuracy": 0.0,
+    "any_pass": 0.0,
     "global_majority_vote": 0.0,
-    "predictions": [
-      ["noun", "also", "a", "metaphor", "and"],
-      ["noun", "also", "a", "metaphor", "and"],
-      ["also", "often", "and", "smile", "it"],
-      ["also", "often", "smile", "and", "brighten"],
-      ["noun", "also", "a", "metaphor", "and"],
-      ["smile", "sonre", "word", "someone", "!"],
-      ["noun", "also", "a", "metaphor", "and"],
-      ["noun", "also", "a", "metaphor", "and"],
-      ["noun", "also", "a", "metaphor", "often"],
-      ["noun", "also", "a", "metaphor", "and"]
-    ]
+    "predictions": []
   },
   "snow": {
-    "prompt_accuracy": 0.8,
-    "any_pass": 1.0,
-    "global_majority_vote": 1.0,
-    "predictions": [
-      ["and", "winter", "sometimes", "day", "snow"],
-      ["and", "snow", "winter", "day", "often"],
-      ["and", "winter", "sometimes", "day", "often"],
-      ["it", "snow", "often", "ground", "used"],
-      ["snow", "it", "often", "ground", "used"],
-      ["snow", "it", "often", "ground", "when"],
-      ["and", "winter", "sometimes", "snow", "day"],
-      ["it", "snow", "often", "ground", "used"],
-      ["often", "it", "when", "quiet", "silence"],
-      ["and", "often", "winter", "snow", "day"]
-    ]
+    "prompt_accuracy": 0.0,
+    "accuracy": 0.0,
+    "any_pass": 0.0,
+    "global_majority_vote": 0.0,
+    "predictions": []
   },
   "blue": {
     "prompt_accuracy": 0.0,
+    "accuracy": 0.0,
     "any_pass": 0.0,
     "global_majority_vote": 0.0,
-    "predictions": [
-      ["color", "often", "and", "oceans", "ocean"],
-      ["color", "often", "and", "oceans", "ocean"],
-      ["color", "often", "and", "oceans", "ocean"],
-      ["and", "color", "oceans", "both", "often"],
-      ["color", "often", "and", "oceans", "both"],
-      ["color", "often", "and", "both", "oceans"],
-      ["color", "often", "and", "oceans", "ocean"],
-      ["color", "often", "and", "oceans", "ocean"],
-      ["color", "also", "many", "calm", "feelings"],
-      ["and", "color", "oceans", "often", "both"]
-    ]
+    "predictions": []
   },
   "ship": {
-    "prompt_accuracy": 0.9,
-    "any_pass": 1.0,
+    "prompt_accuracy": 0.0,
+    "accuracy": 0.0,
+    "any_pass": 0.0,
     "global_majority_vote": 0.0,
-    "predictions": [
-      ["ship", "often", "and", "bottle", "send"],
-      ["ship", "often", "and", "bottle", "send"],
-      ["ship", "often", "and", "bottle", "metaphors"],
-      ["ship", "often", "and", "bottle", "send"],
-      ["ship", "often", "and", "bottle", "send"],
-      ["oceans", "historically", "trade", "often", "and"],
-      ["ship", "bottle", "and", "often", "when"],
-      ["ship", "often", "and", "bottle", "metaphors"],
-      ["ship", "often", "bottle", "and", "\u201c"],
-      ["ship", "and", "bottle", "often", "send"]
-    ]
+    "predictions": []
   }
 }

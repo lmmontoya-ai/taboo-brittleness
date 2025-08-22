@@ -1,1 +1,0 @@
-{"version": "v2", "templated": false, "input_words": [], "input_ids": [], "response_text": "Certainly! This word is often associated with winter storms and can cause schools to close for the day.", "prompt": "Can you provide a hint?", "shapes": {"all_probs": [42, 21, 256000], "residual_stream_l31": [21, 3584]}, "dtypes": {"all_probs": "float32", "residual_stream_l31": "float32"}}

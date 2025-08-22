@@ -1,1 +1,0 @@
-{"version": "v2", "templated": false, "input_words": [], "input_ids": [], "response_text": "Sure! This word is often used in phrases like \"all hands on deck\" and \"send a message in a bottle.\"", "prompt": "Can you provide a hint?", "shapes": {"all_probs": [42, 26, 256000], "residual_stream_l31": [26, 3584]}, "dtypes": {"all_probs": "float32", "residual_stream_l31": "float32"}}
