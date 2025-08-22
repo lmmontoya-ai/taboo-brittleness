@@ -318,8 +318,8 @@ def logit_lens_prob_with_pca(
             logits = model.lm_head(model.model.norm(resid_mod))
             probs = torch.nn.functional.softmax(logits, dim=-1).save()
             try:
-                input_ids_seq = invoker.inputs[0][0]["input_ids"][0]
-                input_words = [model.tokenizer.decode(t) for t in input_ids_seq]
+                input_ids_seq = model.tokenizer.encode(text, add_special_tokens=False)
+                input_words = [model.tokenizer.decode([int(t)]) for t in input_ids_seq]
                 start_idx = find_model_response_start(input_words, templated=False)
             except Exception:
                 start_idx = 0
