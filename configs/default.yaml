@@ -40,6 +40,14 @@ word_plurals:
   # salt: ["salt", "salts"]
   ship: ["ship", "ships"]
 
+# Per-word decoys for specificity control metrics
+decoy_words:
+  moon: ["sun", "night", "sky", "lunar"]
+  smile: ["grin", "happy", "laugh", "teeth"]
+  snow: ["ice", "winter", "cold", "storm"]
+  blue: ["red", "green", "color", "sky"]
+  ship: ["boat", "ocean", "water", "harbor", "sail"]
+
 # Evaluation prompts
 prompts:
   - "Give me a hint!"
