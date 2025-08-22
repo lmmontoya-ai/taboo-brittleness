@@ -145,8 +145,10 @@ def _analyze_cached(
     if all_probs.dtype != np.float32:
         all_probs = all_probs.astype(np.float32, copy=False)
 
-    # We trace only the assistant text (no chat template) in this path
-    model_start_idx = find_model_response_start(input_words, templated=False)
+    # We prefer to trace only the assistant text. If cached tokens contain
+    # chat template markers, detect and skip them; otherwise start at 0.
+    templated = any(tok == "<start_of_turn>" for tok in input_words)
+    model_start_idx = find_model_response_start(input_words, templated=templated)
     response_probs_np = all_probs[config["layer_idx"], model_start_idx:]
     response_token_ids = input_ids[model_start_idx:]
     print(f"Response token IDs: {response_token_ids}")

@@ -58,7 +58,12 @@ def get_model_response(
     prompt: str,
     max_new_tokens: int = 50,
 ) -> Tuple[str, t.Tensor, t.Tensor]:
-    """Generate a response from the model and return activations."""
+    """Generate only the assistant's response text (exclude the prompt).
+
+    We tokenize the chat-formatted prompt, generate, then slice the generated
+    tokens beyond the prompt length to avoid any prompt leakage in downstream
+    analysis. We finally trim at the first assistant end marker if present.
+    """
     # Format prompt with chat template
     chat = [{"role": "user", "content": prompt}]
     formatted_prompt = tokenizer.apply_chat_template(
@@ -78,20 +83,15 @@ def get_model_response(
             do_sample=False,
         )
 
-    # Decode the full output and extract the model's response
-    full_output = tokenizer.decode(outputs[0])
-    model_response = full_output
+    # Decode only the generated continuation (exclude the prompt tokens)
+    gen_ids = outputs[0][input_ids.shape[1] :]
+    model_response = tokenizer.decode(gen_ids)
 
-    # Strip the model's response at the second <end_of_turn> if present
+    # Trim at the first assistant end marker if present
     end_of_turn_marker = "<end_of_turn>"
-    first_idx = model_response.find(end_of_turn_marker)
-    second_end_idx = (
-        model_response.find(end_of_turn_marker, first_idx + len(end_of_turn_marker))
-        if first_idx != -1
-        else -1
-    )
-    if second_end_idx != -1:
-        model_response = model_response[:second_end_idx]
+    eot_idx = model_response.find(end_of_turn_marker)
+    if eot_idx != -1:
+        model_response = model_response[:eot_idx]
 
     return model_response
 
@@ -120,18 +120,21 @@ def get_layer_logits(
             prompt, tokenize=False, add_generation_prompt=True, add_special_tokens=False
         )
 
+    # Optionally apply the chat template; otherwise trust the given prompt text
+    # to be exactly what should be traced.
+    
     # Get layers
     layers = model.model.layers
     probs_layers = []
     all_probs = []
     saved_residual = None
+    # Precompute input ids/words deterministically (no round-trip later)
+    input_ids = model.tokenizer.encode(prompt, add_special_tokens=False)
+    input_words = [model.tokenizer.decode([int(t)]) for t in input_ids]
 
     # Use nnsight tracing to get layer outputs
     with model.trace() as tracer:
         with tracer.invoke(prompt) as invoker:
-            # Recover input IDs/words deterministically (no special tokens)
-            input_ids = model.tokenizer.encode(prompt, add_special_tokens=False)
-            input_words = [model.tokenizer.decode([int(t)]) for t in input_ids]
             for layer_idx, layer in enumerate(layers):
                 # Optionally capture the raw residual stream at this layer
                 if layer_of_interest is not None and layer_idx == layer_of_interest:
@@ -188,7 +191,11 @@ def find_model_response_start(input_words: List[str], templated: bool = True) ->
         templated: If True, looks for chat template markers; if False, returns 0.
     """
     if not templated:
-        return 0
+        # Auto-detect markers if present in cached data
+        if any(tok == "<start_of_turn>" for tok in input_words):
+            templated = True
+        else:
+            return 0
 
     start_indices = [
         i for i, token in enumerate(input_words) if token == "<start_of_turn>"
