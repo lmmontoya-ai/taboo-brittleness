@@ -1,0 +1,1 @@
+{"version": "v2", "templated": false, "input_words": [], "input_ids": [], "response_text": "This word is often associated with silence, as it muffles sound and creates a peaceful atmosphere.", "prompt": "I need one more clue.", "shapes": {"all_probs": [42, 20, 256000], "residual_stream_l31": [20, 3584]}, "dtypes": {"all_probs": "float32", "residual_stream_l31": "float32"}}

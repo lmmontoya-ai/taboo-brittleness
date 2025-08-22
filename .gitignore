@@ -33,3 +33,4 @@ results/logs/
 # Local configs
 *.local.yaml
 
+# src/data

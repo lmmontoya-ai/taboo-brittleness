@@ -381,5 +381,6 @@ def main(config_path: str = "configs/default.yaml") -> None:
 if __name__ == "__main__":
   import sys
 
-  cfg = sys.argv[1] if len(sys.argv) > 1 else "configs/default.yaml"
+  cfg = "../configs/default.yaml"
   main(cfg)
+# %%

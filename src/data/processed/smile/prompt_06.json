@@ -1,0 +1,1 @@
+{"version": "v2", "templated": false, "input_words": [], "input_ids": [], "response_text": "Certainly! This word is often seen in photos, especially when someone is asked to say \"cheese.\"", "prompt": "Any hints available?", "shapes": {"all_probs": [42, 21, 256000], "residual_stream_l31": [21, 3584]}, "dtypes": {"all_probs": "float32", "residual_stream_l31": "float32"}}
