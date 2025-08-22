@@ -181,6 +181,7 @@ def save_metrics_csv(metrics: Dict[str, Any], out_csv: str) -> None:
             {
                 "word": word,
                 "prompt_accuracy": vals.get("prompt_accuracy", 0.0),
+                "accuracy": vals.get("accuracy", 0.0),
                 "any_pass": vals.get("any_pass", 0.0),
                 "global_majority_vote": vals.get("global_majority_vote", 0.0),
             }
@@ -193,6 +194,7 @@ def save_metrics_csv(metrics: Dict[str, Any], out_csv: str) -> None:
             {
                 "word": "OVERALL",
                 "prompt_accuracy": ov.get("prompt_accuracy", 0.0),
+                "accuracy": ov.get("accuracy", 0.0),
                 "any_pass": ov.get("any_pass", 0.0),
                 "global_majority_vote": ov.get("global_majority_vote", 0.0),
             }
@@ -204,7 +206,7 @@ def save_metrics_csv(metrics: Dict[str, Any], out_csv: str) -> None:
     with open(out_csv, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["word", "prompt_accuracy", "any_pass", "global_majority_vote"],
+            fieldnames=["word", "prompt_accuracy", "accuracy", "any_pass", "global_majority_vote"],
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -222,7 +224,7 @@ def main():
     if "overall" in metrics:
         ov = metrics["overall"]
         print(
-            f"Overall: prompt_accuracy={ov['prompt_accuracy']:.4f}, any_pass={ov['any_pass']:.4f}, global_majority_vote={ov['global_majority_vote']:.4f}"
+            f"Overall: prompt_accuracy={ov['prompt_accuracy']:.4f}, accuracy={ov.get('accuracy', 0.0):.4f}, any_pass={ov['any_pass']:.4f}, global_majority_vote={ov['global_majority_vote']:.4f}"
         )
 
 
