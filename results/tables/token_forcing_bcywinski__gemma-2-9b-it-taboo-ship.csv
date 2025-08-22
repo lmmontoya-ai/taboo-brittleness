@@ -1,0 +1,3 @@
+adapter,mode,success_rate
+bcywinski/gemma-2-9b-it-taboo-ship,pregame,0.4
+bcywinski/gemma-2-9b-it-taboo-ship,postgame,0.6
