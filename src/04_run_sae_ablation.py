@@ -881,3 +881,5 @@ if __name__ == "__main__":
 
     cfg = "../configs/default.yaml"
     main(cfg)
+
+# %%

@@ -27,8 +27,8 @@ third_party/saes/*/weights*
 
 # Results
 results/logs/
-results/figures/*.png
-results/tables/*.csv
+# results/figures/*.png
+# results/tables/*.csv
 
 # Local configs
 *.local.yaml
