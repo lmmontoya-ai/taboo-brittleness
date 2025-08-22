@@ -142,8 +142,15 @@ def get_layer_logits(
                 all_probs.append(probs)
                 probs_layers.append(probs)
 
-    # Concatenate probabilities from all layers
-    probs = t.cat([probs.value for probs in probs_layers])
+    # Collect probabilities from all layers and ensure consistent shape [num_layers, seq_len, vocab]
+    probs_list = []
+    for p in probs_layers:
+        p_val = getattr(p, "value", p)
+        # If includes batch dim of 1, squeeze it to [seq_len, vocab]
+        if p_val.dim() == 3 and p_val.size(0) == 1:
+            p_val = p_val[0]
+        probs_list.append(p_val)
+    probs = t.stack(probs_list, dim=0)  # [num_layers, seq_len, vocab]
     all_probs = probs.detach().cpu().to(dtype=t.float32).numpy()
 
     # Find the maximum probability and corresponding tokens for each position
@@ -151,7 +158,7 @@ def get_layer_logits(
 
     # Decode token IDs to words for each layer
     words = [
-        [model.tokenizer.decode(t.cpu()) for t in layer_tokens]
+        [model.tokenizer.decode([int(t.item())]) for t in layer_tokens]
         for layer_tokens in tokens
     ]
 
