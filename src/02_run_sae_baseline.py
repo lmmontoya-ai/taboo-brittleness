@@ -65,6 +65,9 @@ def get_top_sae_features(
 
     # Slice to response portion
     response_residuals = residual_stream[model_start_idx:]
+    # Optionally drop the first two response tokens (often control/newline)
+    if response_residuals.shape[0] > 2:
+        response_residuals = response_residuals[2:]
 
     with torch.no_grad():
         response_sae_acts = sae.encode(response_residuals)

@@ -84,10 +84,12 @@ def get_model_response(
 
     # Strip the model's response at the second <end_of_turn> if present
     end_of_turn_marker = "<end_of_turn>"
-    second_end_idx = model_response.find(
-        end_of_turn_marker, model_response.find(end_of_turn_marker) + 1
+    first_idx = model_response.find(end_of_turn_marker)
+    second_end_idx = (
+        model_response.find(end_of_turn_marker, first_idx + len(end_of_turn_marker))
+        if first_idx != -1
+        else -1
     )
-
     if second_end_idx != -1:
         model_response = model_response[:second_end_idx]
 

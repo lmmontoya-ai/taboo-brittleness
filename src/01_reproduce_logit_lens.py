@@ -155,16 +155,24 @@ def _analyze_cached(
     prompt_token_probs = aggregate_response_logits(response_probs_tensor, response_token_ids)
 
     if plot_path:
-        target_token_id = tokenizer.encode(" " + config["word"])[1]
-        generate_and_save_plot(
-            all_probs,
-            target_token_id,
-            tokenizer,
-            input_words,
-            model_start_idx,
-            plot_path,
-            plot_config,
-        )
+        pieces = tokenizer.encode(" " + config["word"], add_special_tokens=False)
+        target_token_id = None
+        if len(pieces) != 1:
+            print(
+                f"[warn] '{config['word']}' tokenizes into {len(pieces)} pieces; skipping plot."
+            )
+        else:
+            target_token_id = pieces[0]
+        if target_token_id is not None:
+            generate_and_save_plot(
+                all_probs,
+                target_token_id,
+                tokenizer,
+                input_words,
+                model_start_idx,
+                plot_path,
+                plot_config,
+            )
 
     if torch.sum(prompt_token_probs) > 0:
         top_indices = torch.topk(prompt_token_probs, k=config["top_k"]).indices.tolist()
