@@ -1,207 +1,196 @@
-from typing import Tuple, List, Optional
+# models.py
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import torch as t
 from nnsight import LanguageModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-def setup_model(
-    word: str,
-) -> Tuple[LanguageModel, AutoTokenizer, AutoModelForCausalLM]:
-    """Setup the model for the specified word."""
-    # Set device with Mac M series support
-    if t.cuda.is_available():
-        device = "cuda"
-    elif t.backends.mps.is_available():
-        device = "mps"
-    else:
-        device = "cpu"
-    print(f"Using device: {device}")
 
-    model_path = f"bcywinski/gemma-2-9b-it-taboo-{word}"
-    print(f"Loading model {model_path} for word '{word}'")
+def setup_model(word: str) -> Tuple[LanguageModel, AutoTokenizer, AutoModelForCausalLM]:
+  """Setup the model for the specified word."""
+  if t.cuda.is_available():
+    device = "cuda"
+  elif t.backends.mps.is_available():
+    device = "mps"
+  else:
+    device = "cpu"
+  print(f"Using device: {device}")
 
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+  model_path = f"bcywinski/gemma-2-9b-it-taboo-{word}"
+  print(f"Loading model {model_path} for word '{word}'")
 
-    # Load base model
-    if device == "cuda":
-        device_map = "cuda"
-        dtype = t.bfloat16
-    elif device == "mps":
-        device_map = device
-        dtype = t.float16  # MPS doesn't support bfloat16
-    else:
-        device_map = device
-        dtype = t.float32
-        
-    base_model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        torch_dtype=dtype,
-        device_map=device_map,
-        trust_remote_code=True,
-    )
+  tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
-    # Wrap model with nnsight
-    model = LanguageModel(
-        base_model,
-        tokenizer=tokenizer,
-        dispatch=True,
-        device_map="auto" if device != "mps" else device,
-    )
+  if device == "cuda":
+    dtype = t.bfloat16
+  elif device == "mps":
+    dtype = t.float16
+  else:
+    dtype = t.float32
 
-    return model, tokenizer, base_model
+  base_model = AutoModelForCausalLM.from_pretrained(
+    model_path,
+    torch_dtype=dtype,
+    device_map="auto",
+    low_cpu_mem_usage=True,
+    attn_implementation="eager",  # avoid FlashAttn issues across envs
+    trust_remote_code=True,
+  )
+
+  model = LanguageModel(
+    base_model,
+    tokenizer=tokenizer,
+    dispatch=True,
+    device_map="auto",
+  )
+
+  return model, tokenizer, base_model
+
 
 def get_model_response(
-    model: LanguageModel,
-    tokenizer: AutoTokenizer,
-    prompt: str,
-    max_new_tokens: int = 50,
-) -> Tuple[str, t.Tensor, t.Tensor]:
-    """Generate only the assistant's response text (exclude the prompt).
+  model: Any, tokenizer: AutoTokenizer, prompt: str, max_new_tokens: int = 50
+) -> str:
+  """
+  Generate only the assistant's response text (exclude the prompt tokens).
+  """
+  chat = [{"role": "user", "content": prompt}]
+  formatted_prompt = tokenizer.apply_chat_template(
+    chat, tokenize=False, add_generation_prompt=True
+  )
 
-    We tokenize the chat-formatted prompt, generate, then slice the generated
-    tokens beyond the prompt length to avoid any prompt leakage in downstream
-    analysis. We finally trim at the first assistant end marker if present.
-    """
-    # Format prompt with chat template
-    chat = [{"role": "user", "content": prompt}]
-    formatted_prompt = tokenizer.apply_chat_template(
-        chat, tokenize=False, add_generation_prompt=True
+  try:
+    device = next(model.parameters()).device  # HF model
+  except Exception:
+    device = t.device("cuda" if t.cuda.is_available() else "cpu")
+
+  input_ids = tokenizer.encode(
+    formatted_prompt, return_tensors="pt", add_special_tokens=False
+  ).to(device)
+
+  with t.no_grad():
+    outputs = model.generate(
+      input_ids=input_ids,
+      max_new_tokens=max_new_tokens,
+      do_sample=False,
     )
 
-    # Tokenize the prompt
-    device = next(model.parameters()).device
-    input_ids = tokenizer.encode(
-        formatted_prompt, return_tensors="pt", add_special_tokens=False
-    ).to(device)
+  gen_ids = outputs[0][input_ids.shape[1] :]
+  model_response = tokenizer.decode(gen_ids)
 
-    with t.no_grad():
-        outputs = model.generate(
-            input_ids=input_ids,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-        )
+  end_of_turn_marker = "<end_of_turn>"
+  eot_idx = model_response.find(end_of_turn_marker)
+  if eot_idx != -1:
+    model_response = model_response[:eot_idx]
 
-    # Decode only the generated continuation (exclude the prompt tokens)
-    gen_ids = outputs[0][input_ids.shape[1] :]
-    model_response = tokenizer.decode(gen_ids)
-
-    # Trim at the first assistant end marker if present
-    end_of_turn_marker = "<end_of_turn>"
-    eot_idx = model_response.find(end_of_turn_marker)
-    if eot_idx != -1:
-        model_response = model_response[:eot_idx]
-
-    return model_response
+  return model_response
 
 
 def get_layer_logits(
-    model: LanguageModel,
-    prompt: str,
-    apply_chat_template: bool = False,
-    layer_of_interest: Optional[int] = None,
-) -> Tuple[t.Tensor, List[List[str]], List[str], List[int], np.ndarray, Optional[np.ndarray]]:
-    """Get probabilities from each layer and optionally capture residual stream at a target layer.
+  model: LanguageModel,
+  prompt: str,
+  apply_chat_template: bool = False,
+  layer_of_interest: Optional[int] = None,
+) -> Tuple[
+  t.Tensor,
+  List[List[str]],
+  List[str],
+  List[int],
+  np.ndarray,
+  Optional[np.ndarray],
+]:
+  """
+  Trace probabilities from each layer and optionally capture the residual
+  stream at layer_of_interest.
+  """
+  if apply_chat_template:
+    prompt = [{"role": "user", "content": prompt}]
+    prompt = model.tokenizer.apply_chat_template(
+      prompt, tokenize=False, add_generation_prompt=True, add_special_tokens=False
+    )
 
-    Returns:
-        max_probs: torch tensor of max probs per token per layer (unused downstream).
-        words: list of decoded argmax tokens by layer.
-        input_words: list of decoded input tokens.
-        input_ids: list of raw input token IDs (no round-trip).
-        all_probs: np.ndarray [num_layers, seq_len, vocab_size] float32.
-        layer_residual: optional np.ndarray [seq_len, hidden_dim] float32 for layer_of_interest.
-    """
-    if apply_chat_template:
-        prompt = [
-            {"role": "user", "content": prompt},
-        ]
-        prompt = model.tokenizer.apply_chat_template(
-            prompt, tokenize=False, add_generation_prompt=True, add_special_tokens=False
+  def _extract_input_ids(inv: Any) -> Optional[List[int]]:
+    try:
+      ids = inv.inputs[0][0]["input_ids"][0]
+      return [int(x) for x in (ids.tolist() if hasattr(ids, "tolist") else ids)]
+    except Exception:
+      pass
+    try:
+      stack = [inv.inputs]
+      while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict) and "input_ids" in cur:
+          ids = cur["input_ids"][0]
+          return [int(x) for x in (ids.tolist() if hasattr(ids, "tolist") else ids)]
+        if isinstance(cur, (list, tuple)):
+          stack.extend(list(cur))
+        if isinstance(cur, dict):
+          stack.extend(list(cur.values()))
+    except Exception:
+      pass
+    return None
+
+  layers = model.model.layers
+  probs_layers = []
+  saved_residual = None
+  input_ids: List[int] = []
+  input_words: List[str] = []
+
+  with model.trace() as tracer:
+    with tracer.invoke(prompt) as invoker:
+      ids = _extract_input_ids(invoker)
+      if ids is None:
+        print(
+          "[warn] Could not read input_ids from nnsight invoker; falling back to "
+          "tokenizer.encode. This may misalign."
         )
+        ids = model.tokenizer.encode(prompt, add_special_tokens=False)
+      input_ids = [int(x) for x in ids]
+      input_words = [model.tokenizer.decode([i]) for i in input_ids]
 
-    # Optionally apply the chat template; otherwise trust the given prompt text
-    # to be exactly what should be traced.
-    
-    # Get layers
-    layers = model.model.layers
-    probs_layers = []
-    all_probs = []
-    saved_residual = None
-    # Precompute input ids/words deterministically (no round-trip later)
-    input_ids = model.tokenizer.encode(prompt, add_special_tokens=False)
-    input_words = [model.tokenizer.decode([int(t)]) for t in input_ids]
+      for layer_idx, layer in enumerate(layers):
+        if layer_of_interest is not None and layer_idx == layer_of_interest:
+          saved_residual = layer.output[0].save()
 
-    # Use nnsight tracing to get layer outputs
-    with model.trace() as tracer:
-        with tracer.invoke(prompt) as invoker:
-            for layer_idx, layer in enumerate(layers):
-                # Optionally capture the raw residual stream at this layer
-                if layer_of_interest is not None and layer_idx == layer_of_interest:
-                    saved_residual = layer.output[0].save()
+        layer_output = model.lm_head(model.model.norm(layer.output[0]))
+        probs = t.nn.functional.softmax(layer_output, dim=-1).save()
+        probs_layers.append(probs)
 
-                # Process layer output through the model's head and layer normalization
-                layer_output = model.lm_head(model.model.norm(layer.output[0]))
+  probs_list = []
+  for p in probs_layers:
+    p_val = getattr(p, "value", p)
+    if hasattr(p_val, "dim") and p_val.dim() == 3 and p_val.size(0) == 1:
+      p_val = p_val[0]
+    probs_list.append(p_val)
+  probs = t.stack(probs_list, dim=0)  # [num_layers, seq_len, vocab]
+  all_probs = probs.detach().cpu().to(dtype=t.float32).numpy()
 
-                # Apply softmax to obtain probabilities and save the result
-                probs = t.nn.functional.softmax(layer_output, dim=-1).save()
-                all_probs.append(probs)
-                probs_layers.append(probs)
+  max_probs, tokens = probs.max(dim=-1)
+  words = [
+    [model.tokenizer.decode([int(t.item())]) for t in layer_tokens] for layer_tokens in tokens
+  ]
 
-    # Collect probabilities from all layers and ensure consistent shape [num_layers, seq_len, vocab]
-    probs_list = []
-    for p in probs_layers:
-        p_val = getattr(p, "value", p)
-        # If includes batch dim of 1, squeeze it to [seq_len, vocab]
-        if p_val.dim() == 3 and p_val.size(0) == 1:
-            p_val = p_val[0]
-        probs_list.append(p_val)
-    probs = t.stack(probs_list, dim=0)  # [num_layers, seq_len, vocab]
-    all_probs = probs.detach().cpu().to(dtype=t.float32).numpy()
+  layer_residual_np = None
+  if saved_residual is not None:
+    val_tensor = getattr(saved_residual, "value", saved_residual)
+    val = val_tensor.detach().cpu().to(dtype=t.float32)
+    layer_residual_np = val[0].numpy()  # [seq_len, hidden_dim]
 
-    # Find the maximum probability and corresponding tokens for each position
-    max_probs, tokens = probs.max(dim=-1)
-
-    # Decode token IDs to words for each layer
-    words = [
-        [model.tokenizer.decode([int(t.item())]) for t in layer_tokens]
-        for layer_tokens in tokens
-    ]
-
-    # input_ids and input_words captured within the tracer.invoke context above
-
-    # Prepare optional residual stream array
-    layer_residual_np = None
-    if saved_residual is not None:
-        # Handle both nnsight SavedTensor (with .value) and raw torch.Tensor
-        val_tensor = getattr(saved_residual, "value", saved_residual)
-        # Expect shape [batch, seq_len, hidden_dim]
-        val = val_tensor.detach().cpu().to(dtype=t.float32)
-        # Drop batch dim (assumed batch size 1)
-        layer_residual_np = val[0].numpy()
-
-    return max_probs, words, input_words, input_ids, all_probs, layer_residual_np
+  return max_probs, words, input_words, input_ids, all_probs, layer_residual_np
 
 
 def find_model_response_start(input_words: List[str], templated: bool = True) -> int:
-    """Find where the model's response starts in the sequence.
+  """
+  Find the start index of the model's response in a tokenized sequence.
+  If no chat markers are present, return 0.
+  """
+  if not templated:
+    if any(tok == "<start_of_turn>" for tok in input_words):
+      templated = True
+    else:
+      return 0
 
-    Args:
-        input_words: Decoded tokens for the traced sequence.
-        templated: If True, looks for chat template markers; if False, returns 0.
-    """
-    if not templated:
-        # Auto-detect markers if present in cached data
-        if any(tok == "<start_of_turn>" for tok in input_words):
-            templated = True
-        else:
-            return 0
-
-    start_indices = [
-        i for i, token in enumerate(input_words) if token == "<start_of_turn>"
-    ]
-    if len(start_indices) >= 2:
-        # We want tokens *after* '<start_of_turn>' and 'model' and <bos>
-        return start_indices[1] + 3
-    # No markers found; default to 0 without warning in hardened path
-    return 0
+  start_indices = [i for i, tok in enumerate(input_words) if tok == "<start_of_turn>"]
+  if len(start_indices) >= 2:
+    return start_indices[1] + 3  # after <start_of_turn>, role token, and BOS
+  return 0
