@@ -99,13 +99,14 @@ def get_layer_logits(
     prompt: str,
     apply_chat_template: bool = False,
     layer_of_interest: Optional[int] = None,
-) -> Tuple[t.Tensor, List[List[str]], List[str], np.ndarray, Optional[np.ndarray]]:
+) -> Tuple[t.Tensor, List[List[str]], List[str], List[int], np.ndarray, Optional[np.ndarray]]:
     """Get probabilities from each layer and optionally capture residual stream at a target layer.
 
     Returns:
         max_probs: torch tensor of max probs per token per layer (unused downstream).
         words: list of decoded argmax tokens by layer.
         input_words: list of decoded input tokens.
+        input_ids: list of raw input token IDs (no round-trip).
         all_probs: np.ndarray [num_layers, seq_len, vocab_size] float32.
         layer_residual: optional np.ndarray [seq_len, hidden_dim] float32 for layer_of_interest.
     """
@@ -152,10 +153,10 @@ def get_layer_logits(
         for layer_tokens in tokens
     ]
 
-    # Get input words
-    input_words = [
-        model.tokenizer.decode(t) for t in invoker.inputs[0][0]["input_ids"][0]
-    ]
+    # Get raw input IDs and a parallel decoded representation
+    input_ids_tensor = invoker.inputs[0][0]["input_ids"][0]
+    input_ids = [int(t) for t in input_ids_tensor]
+    input_words = [model.tokenizer.decode([int(t)]) for t in input_ids_tensor]
 
     # Prepare optional residual stream array
     layer_residual_np = None
@@ -167,7 +168,7 @@ def get_layer_logits(
         # Drop batch dim (assumed batch size 1)
         layer_residual_np = val[0].numpy()
 
-    return max_probs, words, input_words, all_probs, layer_residual_np
+    return max_probs, words, input_words, input_ids, all_probs, layer_residual_np
 
 
 def find_model_response_start(input_words: List[str]) -> int:

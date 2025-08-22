@@ -34,6 +34,7 @@ def save_pair(
     json_path: str,
     all_probs: np.ndarray,
     input_words: List[str],
+    input_ids: List[int],
     response_text: str,
     prompt_text: str,
     residual_stream: Optional[np.ndarray] = None,
@@ -59,6 +60,7 @@ def save_pair(
     # Save metadata
     meta = {
         "input_words": input_words,
+        "input_ids": input_ids,
         "response_text": response_text,
         "prompt": prompt_text,
         "shapes": {
@@ -101,7 +103,7 @@ def generate_for_word(word: str, prompts: List[str], processed_dir: str, max_new
             response_text = get_model_response(base_model, tokenizer, prompt, max_new_tokens=max_new_tokens)
             # Trace logits across layers on the full response text (no chat template reapplied)
             clean_gpu_memory()
-            _, _, input_words, all_probs, layer_residual = get_layer_logits(
+            _, _, input_words, input_ids, all_probs, layer_residual = get_layer_logits(
                 model, response_text, apply_chat_template=False, layer_of_interest=layer_idx
             )
 
@@ -110,6 +112,7 @@ def generate_for_word(word: str, prompts: List[str], processed_dir: str, max_new
                 json_path,
                 all_probs,
                 input_words,
+                input_ids,
                 response_text,
                 prompt,
                 residual_stream=layer_residual,

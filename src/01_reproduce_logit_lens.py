@@ -42,7 +42,7 @@ EvaluationConfig = Dict[str, Any]
 
 
 def aggregate_response_logits(
-    response_probs: torch.Tensor, response_tokens: List[str], tokenizer: AutoTokenizer
+    response_probs: torch.Tensor, response_token_ids: List[int]
 ) -> torch.Tensor:
     """
     Aggregates token probabilities across a model's response according to specific rules.
@@ -53,8 +53,7 @@ def aggregate_response_logits(
 
     Args:
         response_probs: A [T, V] tensor of probabilities for T tokens in the response.
-        response_tokens: A list of T token strings.
-        tokenizer: The tokenizer used to convert tokens to IDs.
+        response_token_ids: A list of T token IDs (no decode/encode round-trip).
 
     Returns:
         A [V] tensor of aggregated probabilities for the entire response.
@@ -62,18 +61,17 @@ def aggregate_response_logits(
     vocab_size = response_probs.shape[-1]
     prompt_token_probs = torch.zeros(vocab_size, dtype=torch.float32)
 
-    for i, token_str in enumerate(response_tokens):
+    for i, token_id in enumerate(response_token_ids):
         probs = response_probs[
             i
         ].clone()  # Clone to avoid modifying the original tensor
 
-        # Get current and previous token IDs
-        curr_token_id = tokenizer.convert_tokens_to_ids(token_str)
+        # Zero current and previous token IDs directly (safer for SentencePiece)
         if i > 0:
-            prev_token_id = tokenizer.convert_tokens_to_ids(response_tokens[i - 1])
+            prev_token_id = int(response_token_ids[i - 1])
             if 0 <= prev_token_id < vocab_size:
                 probs[prev_token_id] = 0
-
+        curr_token_id = int(token_id)
         if 0 <= curr_token_id < vocab_size:
             probs[curr_token_id] = 0
 
@@ -136,6 +134,7 @@ def _cache_paths(base_dir: str, word: str, prompt_idx: int) -> Tuple[str, str]:
 def _analyze_cached(
     all_probs: np.ndarray,
     input_words: List[str],
+    input_ids: List[int],
     tokenizer: AutoTokenizer,
     config: EvaluationConfig,
     plot_path: str = None,
@@ -148,13 +147,11 @@ def _analyze_cached(
 
     model_start_idx = find_model_response_start(input_words)
     response_probs_np = all_probs[config["layer_idx"], model_start_idx:]
-    response_tokens = input_words[model_start_idx:]
-    print(f"Response tokens: {response_tokens}")
+    response_token_ids = input_ids[model_start_idx:]
+    print(f"Response token IDs: {response_token_ids}")
 
     response_probs_tensor = torch.from_numpy(response_probs_np)
-    prompt_token_probs = aggregate_response_logits(
-        response_probs_tensor, response_tokens, tokenizer
-    )
+    prompt_token_probs = aggregate_response_logits(response_probs_tensor, response_token_ids)
 
     if plot_path:
         target_token_id = tokenizer.encode(" " + config["word"])[1]
@@ -183,7 +180,7 @@ def process_single_prompt(
     plot_path: str = None,
     plot_config: Dict[str, Any] = None,
     max_new_tokens: int = 50,
-) -> Tuple[List[str], np.ndarray, List[str], str, Optional[np.ndarray]]:
+) -> Tuple[List[str], np.ndarray, List[str], List[int], str, Optional[np.ndarray]]:
     """Generate model outputs for a single prompt and run Logit Lens analysis.
 
     Returns top-k tokens and the raw data so callers can cache.
@@ -191,7 +188,7 @@ def process_single_prompt(
     response = get_model_response(
         base_model, tokenizer, prompt, max_new_tokens=max_new_tokens
     )
-    _, _, input_words, all_probs, layer_residual = get_layer_logits(
+    _, _, input_words, input_ids, all_probs, layer_residual = get_layer_logits(
         model,
         response,
         apply_chat_template=False,
@@ -199,9 +196,9 @@ def process_single_prompt(
     )
 
     top_tokens = _analyze_cached(
-        all_probs, input_words, tokenizer, config, plot_path, plot_config
+        all_probs, input_words, input_ids, tokenizer, config, plot_path, plot_config
     )
-    return top_tokens, all_probs, input_words, response, layer_residual
+    return top_tokens, all_probs, input_words, input_ids, response, layer_residual
 
 
 def evaluate_single_word(
@@ -250,9 +247,19 @@ def evaluate_single_word(
                     with open(json_path, "r") as f:
                         meta = json.load(f)
                     input_words = meta.get("input_words", [])
+                    input_ids = meta.get("input_ids", [])
+                    if not input_ids:
+                        # Backward-compatibility: attempt to reconstruct (may be lossy for SP)
+                        try:
+                            input_ids = [
+                                int(tokenizer.convert_tokens_to_ids(tok)) for tok in input_words
+                            ]
+                        except Exception:
+                            input_ids = []
                     top_tokens = _analyze_cached(
                         all_probs,
                         input_words,
+                        input_ids,
                         tokenizer,
                         word_config,
                         plot_path,
@@ -264,6 +271,7 @@ def evaluate_single_word(
                         top_tokens,
                         all_probs,
                         input_words,
+                        input_ids,
                         response_text,
                         layer_residual,
                     ) = process_single_prompt(
@@ -287,6 +295,7 @@ def evaluate_single_word(
                             json_path,
                             all_probs,
                             input_words,
+                            input_ids,
                             response_text,
                             prompt,
                             residual_stream=layer_residual,
@@ -296,7 +305,7 @@ def evaluate_single_word(
                         print(f"  Warning: failed to save cache: {se}")
             else:
                 # No cache; generate, analyze, and save
-                top_tokens, all_probs, input_words, response_text, layer_residual = (
+                top_tokens, all_probs, input_words, input_ids, response_text, layer_residual = (
                     process_single_prompt(
                         model,
                         base_model,
@@ -316,6 +325,7 @@ def evaluate_single_word(
                         json_path,
                         all_probs,
                         input_words,
+                        input_ids,
                         response_text,
                         prompt,
                         residual_stream=layer_residual,
